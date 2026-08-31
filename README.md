@@ -1,2 +1,2 @@
 # Kernels
-A repo that contains implementations of gpu kernels
+A repo that contains implementations of CUDA kernels.
