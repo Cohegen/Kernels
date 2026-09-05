@@ -71,6 +71,18 @@ Total CUDA End-to-End Time: 464.391 ms
 Effective Memory Bandwidth (including H2D and D2H): 2.43418 GB/s
 ```
 
+## Benchmarks
+### 1. Testing different blocksizes
+- In the **block_tuning** folder there are two cuda files which have blocksizes of 512 and 1024 threads respectively.
+- After compiling them, I compared their metrics with our naive vector add kernel.
+- The following results were obtained
+
+| Kernel | H2D Transfer (ms) | Kernel Execution (ms) | D2H Transfer (ms) | Total End-to-End (ms) | Effective Bandwidth (GB/s) |
+|:------------------------|--------------------:|----------------------:|------------------:|------------------------:|---------------------------|
+| Naive (Block Size 1024) |             170.280 |                 4.76640 |           269.089 |                 444.505 |                     2.54361 |
+| Block Size 512          |             168.334 |                 4.72291 |           265.990 |                 439.399 |                     2.57316 |
+| Block Size 1024         |             167.794 |                 4.76867 |           261.112 |                 434.065 |                     2.60567 |
+
 ## Observations
 
 * Vector addition performs very little computation per element compared with the amount of data that must be read and written.
