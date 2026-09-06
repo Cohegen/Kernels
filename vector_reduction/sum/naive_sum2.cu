@@ -1,5 +1,5 @@
 /*
-An interleaved addressed kernel whose aim is to minimize the divergence
+An interleaved addressed kernel whose aim is to minimize thread divergence
 */
 
 #include <cuda_runtime.h>
