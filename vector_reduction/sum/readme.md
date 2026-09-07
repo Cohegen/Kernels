@@ -114,41 +114,16 @@ I benchmarked each kernel on an array of size $N = 256$ using CUDA events to rec
 
 ### Detailed Timing Breakdown
 
-**1. Naive Sum Reduction (`naive_sum_reduction.cu`)**
-- Host-to-Device: 0.0225 ms
-- Kernel Execution: 0.2447 ms
-- Device-to-Host: 0.0275 ms
-- End-to-End: 0.3132 ms
-
-**2. Naive Sum Reduction - No Divergence (`naive_sum2.cu`)**
-- Host-to-Device: 0.0195 ms
-- Kernel Execution: 0.1624 ms
-- Device-to-Host: 0.0254 ms
-- End-to-End: 0.2238 ms
-
-**3. Convergent Sum Reduction (`convergent_sum_naive.cu`)**
-- Host-to-Device: 0.0164 ms
-- Kernel Execution: 0.2314 ms
-- Device-to-Host: 0.0271 ms
-- End-to-End: 0.2898 ms
-
-**4. Shared Memory Reduction (`shared_mem_reduction.cu`)**
-- Host-to-Device: 0.0234 ms
-- Kernel Execution: 0.1700 ms
-- Device-to-Host: 0.0285 ms
-- End-to-End: 0.2399 ms
-
-**5. Shared Memory - No Divergence (`shared_mem_sum2.cu`)**
-- Host-to-Device: 0.0169 ms
-- Kernel Execution: 0.1710 ms
-- Device-to-Host: 0.0282 ms
-- End-to-End: 0.2335 ms
-
-**6. Convergent Shared Memory (`convergent_shared_reductio.cu`)**
-- Host-to-Device: 0.0223 ms
-- Kernel Execution: 0.1721 ms
-- Device-to-Host: 0.0287 ms
-- End-to-End: 0.2392 ms
+| Kernel Name                    | H2D Time (ms) | H2D BW (GB/s) | Kernel Time (ms) | D2H Time (ms) | D2H BW (GB/s) | E2E Time (ms) |
+|--------------------------------|--------------:|--------------:|-----------------:|--------------:|--------------:|--------------:|
+| `naive_sum_reduction`          | 0.046304      | 0.176918      | 0.202464         | 0.031520      | 0.000127      | 0.299392      |
+| `shared_mem_sum_reduction`     | 0.021184      | 0.386707      | 0.163712         | 0.024832      | 0.000161      | 0.225824      |
+| `convergent_sum_reduction`     | 0.018432      | 0.444444      | 0.217120         | 0.026432      | 0.000151      | 0.279552      |
+| `convergent_shared_mem`        | 0.071136      | 0.115160      | 0.212768         | 0.026176      | 0.000153      | 0.327072      |
+| `naive_sum_reduction_noDiverge` | 0.022528     | 0.363636      | 0.151520         | 0.025248      | 0.000158      | 0.215040      |
+| `shared_mem_noDiverge`         | 0.023904      | 0.342704      | 0.169504         | 0.029184      | 0.000137      | 0.249088      |
+| `fast_add_load`               | 0.014528      | 0.070485      | 0.162720         | 0.027296      | 0.000147      | 0.222560      |
+| `unrolling_last_warp`         | 0.016352      | 0.062622      | 0.164864         | 0.026112      | 0.000153      | 0.225312      |
 
 ---
 
