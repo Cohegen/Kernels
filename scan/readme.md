@@ -31,3 +31,12 @@ void sequential_scan(float* x, float* y,unsigned int N)
 ```
 - From the code above we can see that each position contains the current element and the inclusive of the previous element.
 - Take for example **Y[3]** it contains the sum of **X[3]** and **Y[2]**, where **Y[2]** contains the sum of **X[0],X[1],X[2]**.
+
+What if instead of using a naive sequential scan algorithm, we could parallel algorithms through kernels run a GPU?. Well this is possibe.
+
+In this directory the following kernels have been implemented and we're going to go deep into them.
+These kernels include:
+           - The Koggle-Stone algorithm
+           - The Brent-Kung algorithm
+           - The Blelloch scan algorith (this is an exclusive scan algorithm)
+           - A coarsened scan .
