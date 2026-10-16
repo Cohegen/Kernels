@@ -19,8 +19,8 @@ Y = [2,6,12,20,30]
   Y[4] = X[0] + X[1] + X[2] + X[3] + X[4]
   ```
 - To implement sequential scan we use the following algorithm in the C++ code below:
-  ```
-  void sequential_scan(float* x, float* y,unsigned int N)
+```
+void sequential_scan(float* x, float* y,unsigned int N)
 {
     y[0] = x[0];
     for(unsigned int i=1;i<N;++i)
@@ -28,4 +28,4 @@ Y = [2,6,12,20,30]
         y[i] = y[i-1] + x[i];
     }
 }
-  ```
+```
