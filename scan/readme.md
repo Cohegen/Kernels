@@ -47,5 +47,38 @@ These kernels include:
 - Let's take out main skeleton/algorithm of the kernel.
 
 ```
+__global__ void Koggle_Stone_scan(float* X, float* Y, unsigned int N)
+{
+    __shared__ float XY[SECTION_SIZE];
 
+    unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < N)
+    {
+        XY[threadIdx.x] = X[i];
+    }
+    else
+    {
+        XY[threadIdx.x] = 0.0f;
+    }
+
+    for (unsigned int stride = 1; stride < blockDim.x; stride *= 2)
+    {
+        __syncthreads();
+        float temp = 0.0f;
+        if (threadIdx.x >= stride)
+        {
+            temp = XY[threadIdx.x] + XY[threadIdx.x - stride];
+        }
+        __syncthreads();
+        if (threadIdx.x >= stride)
+        {
+            XY[threadIdx.x] = temp;
+        }
+    }
+
+    if (i < N)
+    {
+        Y[i] = XY[threadIdx.x];
+    }
+}
 ```
