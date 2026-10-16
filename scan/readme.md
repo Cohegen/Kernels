@@ -18,3 +18,7 @@ Y = [2,6,12,20,30]
   Y[3] = X[0] + X[1] + X[2] + X[3]
   Y[4] = X[0] + X[1] + X[2] + X[3] + X[4]
   ```
+- To implement sequential scan we use the following algorithm in the C++ code below:
+  ```
+  
+  ```
