@@ -40,3 +40,12 @@ These kernels include:
            - The Brent-Kung algorithm
            - The Blelloch scan algorith (this is an exclusive scan algorithm)
            - A coarsened scan .
+
+# Koggle-Stone Algorithm
+- This algorithm uses an approach whereby we compute the prefix results of an array in a tree-like structure.
+- We implement it using the kernel in **koggle_stone.cu**.
+- Let's take out main skeleton/algorithm of the kernel.
+
+```
+
+```
