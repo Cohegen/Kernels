@@ -82,3 +82,36 @@ __global__ void Koggle_Stone_scan(float* X, float* Y, unsigned int N)
     }
 }
 ```
+From the kernel above we first created an array **XY** which is located in the shared memory. It's main role will be storing the partial sums after each stage completes their respective sum.
+But what are these stages and where do they come from? Well, assume we have a **blockDim** of say 8, meaning our array has eight elements. From the for loop we can  that the stride doubles after every round/stage and since we set a condition that stride must be less than **blockDim**. This means that stride will go from 1 to 2 then to 4 counting the amount of the strides we see we have 3 stages.
+
+Given an array:
+```
+X = [1,2,3,4,5,6,7,8]
+```
+when stride = 1
+```
+XY[0] = X[0]
+XY[1] = X[0]+X[1]
+XY[2] = X[1] + X[2]
+.....
+XY[7] = X[6] + X[7]
+```
+
+stride = 2
+```
+XY[2] = X[0] + X[2]
+XY[3] = X[1] + X[3]
+...
+XY[7] = X[5] + x[7]
+```
+stride = 4
+```
+XY[4] =X[0] + X[4]
+XY[5] = X[1] + X[5]
+XY[6] = X[2] + X[6]
+XY[7] = X[3] + X[7] 
+```
+
+From above we can see that when stride=1(stage 1) we have 7 additions , when stride=2(stage 2) we have 6 additions and finally when stride=4 we have 4 additions brings the total number of additions to 7+6+4 = 17. 
+So we conclude that work done $W$ by Koggle-Stone scan is 17 additions and for us to finish this work we need 3 stages  meaning Koggle-Stone dependent stage is $log_{2} N$ where $N$ is the number of stages that are required to deem the work to be complete.
