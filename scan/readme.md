@@ -85,6 +85,7 @@ __global__ void Koggle_Stone_scan(float* X, float* Y, unsigned int N)
 From the kernel above we first created an array **XY** which is located in the shared memory. It's main role will be storing the partial sums after each stage completes their respective sum.
 But what are these stages and where do they come from? Well, assume we have a **blockDim** of say 8, meaning our array has eight elements. From the for loop we can  that the stride doubles after every round/stage and since we set a condition that stride must be less than **blockDim**. This means that stride will go from 1 to 2 then to 4 counting the amount of the strides we see we have 3 stages.
 
+![img:](assets/koggle_stone.png)
 Given an array:
 ```
 X = [1,2,3,4,5,6,7,8]
