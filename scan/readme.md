@@ -281,18 +281,18 @@ XY = [1,3,6,10,15,21,28,36]
 - Thus we can see that the Brent-Kung addition performs much less work than the Koggle-Stone.
 - For an array of (N) elements, where (N) is a power of two, Brent–Kung performs:
 
-[
+$
 W(N) = 2N - \log_2 N - 2
-]
+$
 
 Therefore:
 
-[
+$
 \boxed{W(N) = O(N)}
-]
+$
 
 The number of parallel stages is:
 
-[
+$
 D(N) = 2\log_2 N - 1
-]
+$
