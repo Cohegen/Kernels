@@ -1,4 +1,3 @@
-
 #include <cuda_runtime.h>
 #include <stdio.h>
 
@@ -6,9 +5,11 @@
 
 __global__ void Koggle_Stone_scan(float* X, float* Y, unsigned int N)
 {
+    //shared memory partial sums
     __shared__ float XY[SECTION_SIZE];
 
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
+    //loading elements into the shared memory array
     if (i < N)
     {
         XY[threadIdx.x] = X[i];
