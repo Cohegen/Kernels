@@ -296,25 +296,55 @@ The number of parallel stages is:
 
 $D(N)$ = $2\log_2 N - 1$
 
-# Coarsened scan
-- Coarsened scan is divided into three phases.
+# Coarsened Scan
+
+* Coarsened scan is divided into three phases.
 
 ## Phase 1
-- Say given the array below
+
+* Say we're given the array below:
+
 ```
 X = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
 ```
-- Here we have each thread perform a sequential scan on its contiguous subsection.
-- In the case of our array let's have four  threads in our block. We partition our 16 element array into 4 subsections with 4 elements each.
-- Thread 0 will perform scan on its section **(1,2,3,4)** and generate **(1,3,6,10)**.
-- Thread 1 will perform scan on its section **(5,6,7,8)** and generate **(5,11,18,26)**.
-- Thread 2 will perform scan on its section **(9,10,11,12)** and generate **(9,19,30,42)**.
-- Thread 3 will perform scan on its section **(13,14,15,16)** and generate **(13,27,42,58)**.
-- If each threads directly performs scan by accessing the input elements from global memory, their accesses would not be coalesced. Say if thread would be accessing input element 0 and thread 1 accesses input element 4 and so on, these accesses are not coalesced since elements being accessing at the get go are not contiguous.
-- 
-- To solving this of uncoalesced accesses, instead directly accessing elements from global memory we have all threads collaboratively load the inputs elements in the shared memory. This is done is a coalesced manner.
-- Once all input elements are shared memory, the threads access their own subsections from shared memory and perform a sequential scan on it.
+
+* Here, we have each thread perform a sequential scan on its contiguous subsection.
+* In the case of our array, let's have four threads in our block. We partition our 16-element array into 4 subsections with 4 elements each.
+* Thread 0 will perform a scan on its section **(1,2,3,4)** and generate **(1,3,6,10)**.
+* Thread 1 will perform a scan on its section **(5,6,7,8)** and generate **(5,11,18,26)**.
+* Thread 2 will perform a scan on its section **(9,10,11,12)** and generate **(9,19,30,42)**.
+* Thread 3 will perform a scan on its section **(13,14,15,16)** and generate **(13,27,42,58)**.
+* If each thread directly performs a scan by accessing the input elements from global memory, their accesses would not be coalesced. Say thread 0 accesses input element 0, thread 1 accesses input element 4, and so on. These accesses are not coalesced since the elements being accessed initially are not contiguous.
+* To solve this problem of uncoalesced accesses, instead of directly accessing elements from global memory, we have all threads collaboratively load the input elements into shared memory. This is done in a coalesced manner.
+* Once all input elements are in shared memory, the threads access their own subsections from shared memory and perform a sequential scan on them.
 
 ## Phase 2
-- During this phase, all threads in each block collaborate and perform a scan operation on a logical array that consists of the last element of each section.
-- This can be done with either a Koggle-stone or Brent-Kung algorithms.
+
+* During this phase, all threads in each block collaborate to perform a scan operation on a logical array consisting of the last element of each subsection.
+* This can be done using either the Kogge–Stone or Brent–Kung algorithm.
+* After doing this, our subsections become:
+
+  ```
+  a = [1,3,6,10]
+  b = [5,11,18,36]
+  c = [9,19,30,78]
+  d = [13,27,42,136]
+  ```
+* We can see that the last elements of subsections b to d are cumulative sums of the last elements of the preceding subsections, including their own last elements.
+
+## Phase 3
+
+* In this phase, each thread adds the new value of the last element of its predecessor's subsection to its elements.
+
+* The last elements of each subsection do not need to be updated during this phase.
+
+* So our subsections become:
+
+  ```
+  a = [1,3,6,10]
+  b = [15,21,28,36]
+  c = [45,55,66,78]
+  d = [91,105,120,136]
+  ```
+
+* With this three-phase approach, we can use a much smaller number of threads than the number of elements in a section. In our case, we've used 4 threads instead of 16 threads.
