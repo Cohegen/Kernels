@@ -296,3 +296,91 @@ The number of parallel stages is:
 
 $D(N)$ = $2\log_2 N - 1$
 
+# Coarsened Scan
+
+* Coarsened scan is divided into three phases.
+
+## Phase 1
+
+* Say we're given the array below:
+
+```
+X = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
+```
+
+* Here, we have each thread perform a sequential scan on its contiguous subsection.
+* In the case of our array, let's have four threads in our block. We partition our 16-element array into 4 subsections with 4 elements each.
+* Thread 0 will perform a scan on its section **(1,2,3,4)** and generate **(1,3,6,10)**.
+* Thread 1 will perform a scan on its section **(5,6,7,8)** and generate **(5,11,18,26)**.
+* Thread 2 will perform a scan on its section **(9,10,11,12)** and generate **(9,19,30,42)**.
+* Thread 3 will perform a scan on its section **(13,14,15,16)** and generate **(13,27,42,58)**.
+* If each thread directly performs a scan by accessing the input elements from global memory, their accesses would not be coalesced. Say thread 0 accesses input element 0, thread 1 accesses input element 4, and so on. These accesses are not coalesced since the elements being accessed initially are not contiguous.
+* To solve this problem of uncoalesced accesses, instead of directly accessing elements from global memory, we have all threads collaboratively load the input elements into shared memory. This is done in a coalesced manner.
+* Once all input elements are in shared memory, the threads access their own subsections from shared memory and perform a sequential scan on them.
+
+## Phase 2
+
+* During this phase, all threads in each block collaborate to perform a scan operation on a logical array consisting of the last element of each subsection.
+* This can be done using either the Kogge–Stone or Brent–Kung algorithm.
+* After doing this, our subsections become:
+
+  ```
+  a = [1,3,6,10]
+  b = [5,11,18,36]
+  c = [9,19,30,78]
+  d = [13,27,42,136]
+  ```
+* We can see that the last elements of subsections b to d are cumulative sums of the last elements of the preceding subsections, including their own last elements.
+
+## Phase 3
+
+* In this phase, each thread adds the new value of the last element of its predecessor's subsection to its elements.
+
+* The last elements of each subsection do not need to be updated during this phase.
+
+* So our subsections become:
+
+  ```
+  a = [1,3,6,10]
+  b = [15,21,28,36]
+  c = [45,55,66,78]
+  d = [91,105,120,136]
+  ```
+
+* With this three-phase approach, we can use a much smaller number of threads than the number of elements in a section. In our case, we've used 4 threads instead of 16 threads.
+
+# Segmented Parallel Scan for Arbitrary-Length Inputs
+
+* In cases where we have a large dataset to scan, we need a different strategy from the ones we've used above.
+
+* We first partition the input into sections so that each section can fit into the shared memory of a streaming multiprocessor and be processed by a single thread block.
+
+* By calling the Kogge–Stone or Brent–Kung kernels on this large dataset, at the end of the grid execution, the Y array (output array) will contain the scan results for individual sections, called **scan blocks**.
+
+* Each element in a scan block only contains the accumulated values of all preceding elements in the same scan block, including itself. These scan blocks need to be combined to produce the final results.
+
+* To do this, we can use another kernel that adds the sums of all elements in the preceding scan blocks to each element of the current scan block.
+
+## Example
+
+* Given a 16-element input array:
+
+```
+X = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
+```
+
+* We divide X into four scan blocks.
+
+* We can use either the Kogge–Stone, Brent–Kung, or coarsened scan kernels to process the individual scan blocks.
+
+* These kernels treat the four scan blocks as independent input datasets.
+
+* After the chosen kernel terminates, each Y element contains the scan result within its scan block. For example, scan block 1 contains **(5,11,18,26)**. These elements do not include any contribution from the preceding scan block 0. To produce the final results for this scan block, the sum of all input elements in block 0, which is 1+2+3+4=10, is added to every result element in scan block 1.
+
+* In the case of scan block 2, it needs the sum of all elements in block 0 (1+2+3+4=10) and block 1 (5+6+7+8=26), which is 10+26=36. This value is then added to every element in scan block 2.
+
+* It's important to know that the last output element of each scan block gives the sum of all input elements in that scan block. In our case, these values are **(10,26,42,58)**. This brings us to the second step of the segmented scan algorithm, which gathers the last result elements from each scan block into an array and performs a scan on these elements.
+
+* After this, the new array becomes **(10,36,78,136)**.
+
+* The last step of the segmented scan is to add the appropriate accumulated sums to the elements of their corresponding scan blocks. In this case, **36 is added to every element in scan block 2 except the last element if it has already been updated**, thus giving us **(45,55,66,78)**.
