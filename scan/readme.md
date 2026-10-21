@@ -296,3 +296,25 @@ The number of parallel stages is:
 
 $D(N)$ = $2\log_2 N - 1$
 
+# Coarsened scan
+- Coarsened scan is divided into three phases.
+
+## Phase 1
+- Say given the array below
+```
+X = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
+```
+- Here we have each thread perform a sequential scan on its contiguous subsection.
+- In the case of our array let's have four  threads in our block. We partition our 16 element array into 4 subsections with 4 elements each.
+- Thread 0 will perform scan on its section **(1,2,3,4)** and generate **(1,3,6,10)**.
+- Thread 1 will perform scan on its section **(5,6,7,8)** and generate **(5,11,18,26)**.
+- Thread 2 will perform scan on its section **(9,10,11,12)** and generate **(9,19,30,42)**.
+- Thread 3 will perform scan on its section **(13,14,15,16)** and generate **(13,27,42,58)**.
+- If each threads directly performs scan by accessing the input elements from global memory, their accesses would not be coalesced. Say if thread would be accessing input element 0 and thread 1 accesses input element 4 and so on, these accesses are not coalesced since elements being accessing at the get go are not contiguous.
+- 
+- To solving this of uncoalesced accesses, instead directly accessing elements from global memory we have all threads collaboratively load the inputs elements in the shared memory. This is done is a coalesced manner.
+- Once all input elements are shared memory, the threads access their own subsections from shared memory and perform a sequential scan on it.
+
+## Phase 2
+- During this phase, all threads in each block collaborate and perform a scan operation on a logical array that consists of the last element of each section.
+- This can be done with either a Koggle-stone or Brent-Kung algorithms.
