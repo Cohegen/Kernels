@@ -7,7 +7,12 @@
 
 #define BLOCK_SIZE 256
 
-__global__ void singlePassScan(const int* input, int* output, int* scan_value, int* flags, unsigned int* blockCounter, std::size_t N)
+__global__ void singlePassScan(const int* input, 
+                               int* output, 
+                               int* scan_value, 
+                               int* flags, 
+                               unsigned int* blockCounter, 
+                                std::size_t N)
 {
     __shared__ int temp[BLOCK_SIZE];
     __shared__ unsigned int bid_s;
@@ -125,7 +130,12 @@ void launchSinglePassScan(const int* d_input, int* d_output, std::size_t N)
     int initial_ready = 1;
     cudaMemcpy(d_flags, &initial_ready, sizeof(int), cudaMemcpyHostToDevice);
 
-    singlePassScan<<<static_cast<unsigned int>(numBlocks), BLOCK_SIZE>>>(d_input, d_output, d_scan_value, d_flags, d_blockCounter, N);
+    singlePassScan<<<static_cast<unsigned int>(numBlocks), BLOCK_SIZE>>>(d_input, 
+                                                                         d_output, 
+                                                                         d_scan_value, 
+                                                                         d_flags, 
+                                                                         d_blockCounter, 
+                                                                         N);
 
     //waiting for the kernel before it releases memory
     cudaDeviceSynchronize();
