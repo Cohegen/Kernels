@@ -385,104 +385,169 @@ X = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
 
 * The last step of the segmented scan is to add the appropriate accumulated sums to the elements of their corresponding scan blocks. In this case, **36 is added to every element in scan block 2 except the last element if it has already been updated**, thus giving us **(45,55,66,78)**.
 
-# Single pass scan
-- Instead of launching three seperate kernels like in the case of the segmented scan kernel, we can perform the entire operation using a single kernel.
-- The main challenge here is that, CUDA thread blocks cannot normally synchronize with one another using **__syncthreads()** like in the case of how individual threads synchronize with other threads in the block they are in.
+# Single-Pass Scan
 
-## Recap of the three-kernel Segmented Scan
-- Given the following array below:
-```
-X = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
-```
-- Assuming each thread block processes four elements.
-- The array will be partitioned into four sections
-```
-block 0 : [1,2,3,4]
-block 1: [5,6,7,8]
-block 2: [9,10,11,12]
-block 3: [13,14,15,16]
-```
-- The main goal is to end up with the array below after inclusive scan:
-```
-Y = [1,3,6,10,15,21,28,28,36,45,55,66,78,91,105,120,136]
-```
-### Phase 1 :Local scan
-- Each block independently performs a parallel scan on its assigned section.
-- By using either Koggle-Stone or Brent-Kung
-```
-block 0 : [1,3,6,10]
-block 1: [5,11,18,26]
-block 2: [9,19,30,42]
-block 3: [13,27,42,58]
-```
-- The sums are stored in a seperate array:
-  ```
-  S = [10,26,42,58]
-  ```
-- The problem here is that the partially scanned results must be written to global memory because the first kernel is about to finish
+* Instead of launching three separate kernels, as in the case of the segmented scan algorithm, we can perform the entire operation using a single kernel.
+* The main challenge here is that CUDA thread blocks cannot normally synchronize with one another using **`__syncthreads()`**, since this function only synchronizes threads within the same thread block.
+* To overcome this challenge, we use **adjacent synchronization**, which allows neighboring thread blocks to communicate through global memory using flags and atomic operations.
 
-### Phase 2:Global scan
-- The second kernel performs a scan on the block sums.
-  ```
-  block_sums = S[10,26,42,58]
-  becomes:
-    S = [10,36,78,136]
-  ```
-  - After this the we have the cumulative sums of all preceding blocks
-  ```
-  block 0 needs an offset of 0 since it doesn't a preceding block
-  block 1 needs an offset of 10 from block 0
-  block 2 needs an offset of 36 from block 1
-  ```
-### Phase 3: Add the offsets
-- A third kernel reads the partially scanned results from the global memory.
-- Each bock adds it corresponding offset
-  ```
-  block 0 : [1,3,6,10]+0 = [1,3,6,10]
-  block 1 : [5,11,18,26]+10 = [15,21,28,36]
-  block 2: [9,19,30,42] + 36 = [45,55,66,78]
-  block 3: [13,27,42,58] + 78 = [91,105,120,136]
-  ```
+## Recap of the Three-Kernel Segmented Scan
 
-- After doing this we end up with the desired output inclusive scan
+* Given the following array:
 
-##  Performance consideration
-- Kernel 1 follows this approach
+```cpp
+X = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
 ```
+
+* Assuming each thread block processes four elements, the array will be partitioned into four sections:
+
+```text
+Block 0: [1, 2, 3, 4]
+Block 1: [5, 6, 7, 8]
+Block 2: [9, 10, 11, 12]
+Block 3: [13, 14, 15, 16]
+```
+
+* The main goal is to produce the following array after performing an inclusive scan:
+
+```text
+Y = [1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 66, 78, 91, 105, 120, 136]
+```
+
+### Phase 1: Local Scan
+
+* Each block independently performs a parallel scan on its assigned section.
+* We can use either the Kogge-Stone or Brent-Kung algorithm to perform the local scan.
+
+```text
+Block 0: [1, 3, 6, 10]
+Block 1: [5, 11, 18, 26]
+Block 2: [9, 19, 30, 42]
+Block 3: [13, 27, 42, 58]
+```
+
+* The sum of each block is stored in a separate array:
+
+```text
+S = [10, 26, 42, 58]
+```
+
+* The problem here is that the partially scanned results must be written to global memory before the first kernel finishes.
+* The local scans are independent, so all four blocks can perform their scans in parallel.
+
+### Phase 2: Global Scan
+
+* The second kernel performs a scan on the block sums.
+
+```text
+Before:
+
+S = [10, 26, 42, 58]
+
+After:
+
+S = [10, 36, 78, 136]
+```
+
+* After this phase, we have the cumulative sums of the blocks. These values allow us to determine the offsets needed by the individual blocks.
+
+```text
+Block 0 needs an offset of 0 because it has no preceding blocks.
+
+Block 1 needs an offset of 10 from Block 0.
+
+Block 2 needs an offset of 36 from Blocks 0 and 1.
+
+Block 3 needs an offset of 78 from Blocks 0, 1, and 2.
+```
+
+**Note:** The scanned block sums include each block's own sum. To obtain a block's offset, we use the cumulative sum of all preceding blocks. Therefore, Block 0's offset is 0, and the offset of each subsequent block is the preceding entry in the scanned block-sum array.
+
+### Phase 3: Add the Offsets
+
+* A third kernel reads the partially scanned results from global memory.
+* Each block adds its corresponding offset to its local scan results.
+
+```text
+Block 0:
+
+[1, 3, 6, 10] + 0
+= [1, 3, 6, 10]
+
+
+Block 1:
+
+[5, 11, 18, 26] + 10
+= [15, 21, 28, 36]
+
+
+Block 2:
+
+[9, 19, 30, 42] + 36
+= [45, 55, 66, 78]
+
+
+Block 3:
+
+[13, 27, 42, 58] + 78
+= [91, 105, 120, 136]
+```
+
+* After combining the results from all four blocks, we obtain the desired inclusive scan:
+
+```text
+Y = [1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 66, 78, 91, 105, 120, 136]
+```
+
+## Performance Considerations
+
+* Kernel 1 follows this approach:
+
+```text
 Global Memory
       |
       | Read input
       v
-   Thread Block
+  Thread Block
       |
       | Local scan
       v
 Global Memory
       |
-      | Write partial results
+      | Write partial scan results
       v
 ```
-- Here we see that there both 1 phase global memory reads and writes.
 
-- Kernel 2 follows this approach :
- ```
- Read block sums
+* Here, the kernel reads the input elements from global memory and writes the partially scanned results back to global memory.
+
+* It also writes the block sums to global memory so that the next kernel can process them.
+
+* Therefore, this phase involves global memory reads and writes.
+
+* Kernel 2 follows this approach:
+
+```text
+Read block sums
        |
        v
-Scan block sums
+Perform global scan
        |
        v
 Write scanned block sums
-  ```
-- There is 1 global memory read and write.
+```
 
-- Kernel 3 follows this approach:
- ```
-  Global Memory
+* The second kernel reads the block sums, scans them, and writes the scanned block sums back to global memory.
+
+* Although the number of block sums is much smaller than the number of input elements, this phase still requires a separate kernel launch and global memory accesses.
+
+* Kernel 3 follows this approach:
+
+```text
+Global Memory
       |
-      | Read partial results again
+      | Read partial scan results
       v
-   Thread Block
+  Thread Block
       |
       | Add offsets
       v
@@ -490,30 +555,47 @@ Global Memory
       |
       | Write final results
       v
-  ```
-- it also the same number of reads and writes as kernel one and two.
-- This whole process of accessing global memory can disadvatageus since these reads and write take time due to global memory traffic and it's expensive.
-- Also launching these three kernels results to **kernel-launch** overhead.
-
-## Solution
-To solve these whole issue of global memory accesses so as to improve performance we do the use a **single-pass scan**. Where instead of launching three kernels we can just lauch one kernel , we can launch a kernel whereby each thread block receives the cumulative sum its predecessor and passes an updated sum to its succcessor.
-
-### Step 1: All blocks perform their local sums
-- The blocks perform their can independetly resulting to:
 ```
-Block 0             Block 1             Block 2
 
-[1, 3, 6, 10]      [5, 11, 18, 26]     [9, 19, 30, 42]
+* The third kernel reads the partially scanned results again, adds the appropriate offsets, and writes the final results to global memory.
 
-Local sum = 10      Local sum = 26      Local sum = 42
+* This repeated access to global memory can negatively affect performance because global memory has higher access latency than on-chip storage such as shared memory.
+
+* In particular, the intermediate scan results must be written to global memory and then read back by the third kernel.
+
+* Launching three separate kernels also introduces **kernel-launch overhead**.
+
+* Furthermore, the three phases cannot overlap their computations within a single ordinary kernel execution because each phase depends on the results of the preceding phase. The separate kernel launches provide global synchronization between phases, but they also impose additional execution overhead.
+
+## Solution: Single-Pass Scan
+
+* To reduce the overhead associated with intermediate global memory accesses and multiple kernel launches, we can use a **single-pass scan**.
+* Instead of launching three kernels, we launch one kernel in which each thread block performs a local scan, receives the cumulative sum from its predecessor, and passes an updated cumulative sum to its successor.
+* This approach is also called a **domino-style scan** because the cumulative sums propagate from one block to the next, similar to falling dominoes.
+* The local scan results can remain in shared memory while each block waits for its offset. Once the offset is available, the block adds it to the local scan results and writes the final output to global memory.
+
+### Step 1: All Blocks Perform Their Local Scans
+
+* All blocks independently perform their local scans.
+
+```text
+Block 0             Block 1             Block 2             Block 3
+
+[1, 3, 6, 10]      [5, 11, 18, 26]     [9, 19, 30, 42]     [13, 27, 42, 58]
+
+Local sum = 10      Local sum = 26      Local sum = 42      Local sum = 58
 ```
-- Here each block uses shared memory to compute its local scan.
-- The main difference here is that the partially scan results remain in the shared memory while the blocks determine their offsets.
 
-### Step 2: Block i passes its sum to block j
-- Block 0 doesn't need an offset because no elements precede it.
-- Thus:
-```
+* Each block uses shared memory to compute its local scan.
+* The main difference is that the partially scanned results can remain in shared memory while the blocks determine their offsets.
+* This avoids having to write the partial scan results to global memory and read them back in a later kernel.
+* However, the blocks still need to communicate their cumulative sums through global memory.
+
+### Step 2: Blocks Pass Their Cumulative Sums to Successors
+
+* Block 0 does not need an offset because no elements precede it.
+
+```text
 Block 0:
 
 Offset = 0
@@ -522,59 +604,140 @@ Local sum = 10
 
 Cumulative sum = 0 + 10 = 10
 ```
-- Block 0 passes it cumulative sum to block 1
-  ```
-  block0 ----> 10 ---> block 1
-  ```
-- Block 1 passes it cumulative sum to block 2.
-- It first receives 10 from block 0
-- It uses this value in two ways as shown below:
-```
-previous sum =10
-local sum = 26
-cumulative sum = 10+26 = 36
 
-```
-- It passes 36 to block 2
-```
-block0 --->10-----> block 1 ----> 36 ----> block 2
-```
-- It adds the received offset to it's local scan resukts
-```
-Block 0:
+* Block 0 passes its cumulative sum to Block 1.
 
-Offset = 0
-
-Local sum = 10
-
-Cumulative sum = 0 + 10 = 10
+```text
+Block 0 -------- 10 --------> Block 1
 ```
-- continue with the rest
 
-## Communication among threadblocks
-- In CUDA threads synchronize with **__syncthreads()**. Thus threads within block 0 can sychronize with each other.
-- However, how can threads in block 1 synchronize with threads in block 0?
-- This is done **adjacent synchronization**.
-- This technique uses global memory and atomic operations to establish communication between neighboring blocks.
+* Block 1 receives 10 from Block 0 and uses this value in two ways.
+* First, it calculates the cumulative sum that will be passed to Block 2.
 
-### Adjacent synchronization using flags
-- Here two global arrays are needed, namely
+```text
+Previous cumulative sum = 10
+
+Local sum = 26
+
+Cumulative sum = 10 + 26 = 36
 ```
-int* scan_value
-int* flags
+
+* Block 1 passes 36 to Block 2.
+
+```text
+Block 0 -------- 10 --------> Block 1 -------- 36 --------> Block 2
 ```
-- **scan_value** stores cumulative sums passes between blocks
+
+* Second, Block 1 adds the received offset to its local scan results.
+
+```text
+Local scan = [5, 11, 18, 26]
+
+Offset = 10
+
+Final scan = [15, 21, 28, 36]
 ```
- scan_value[0] = 0
+
+* Block 2 follows the same process.
+
+```text
+Previous cumulative sum = 36
+
+Local sum = 42
+
+Cumulative sum = 36 + 42 = 78
+```
+
+* It passes 78 to Block 3 and adds 36 to its local scan results.
+
+```text
+Local scan = [9, 19, 30, 42]
+
+Offset = 36
+
+Final scan = [45, 55, 66, 78]
+```
+
+* Finally, Block 3 receives 78 from Block 2.
+
+```text
+Previous cumulative sum = 78
+
+Local sum = 58
+
+Cumulative sum = 78 + 58 = 136
+```
+
+* It adds the received offset to its local scan results.
+
+```text
+Local scan = [13, 27, 42, 58]
+
+Offset = 78
+
+Final scan = [91, 105, 120, 136]
+```
+
+* The process continues until all blocks have produced their final results.
+
+**Important observation:** The propagation of cumulative sums is sequential because each block depends on its predecessor. However, once a block receives its offset and passes its cumulative sum to its successor, it can perform its final offset additions while other blocks continue processing. This allows parallelism during the final phase.
+
+## Communication Among Thread Blocks
+
+* In CUDA, threads synchronize using **`__syncthreads()`**. This allows threads within Block 0 to synchronize with one another.
+* However, `__syncthreads()` cannot synchronize threads belonging to different blocks.
+* Therefore, how can Block 1 know when Block 0 has finished calculating and publishing its cumulative sum?
+* This is achieved using **adjacent synchronization**.
+* This technique uses global memory and atomic operations to establish communication between neighboring blocks.
+* The communication follows a producer-consumer pattern: Block 0 produces a cumulative sum, and Block 1 consumes it.
+
+### Adjacent Synchronization Using Flags
+
+* Two global memory arrays are needed:
+
+```cpp
+int* scan_value;
+int* flags;
+```
+
+* **`scan_value`** stores the cumulative sums passed between blocks.
+
+```text
 scan_value[1] = 10
 scan_value[2] = 36
 scan_value[3] = 78
 scan_value[4] = 136
- ```
+```
 
-- **flags** - indicates whether a cumulative sum is ready to consumed by the successor block
-  ```
-  flags = [1, 0, 0, 0]
-  ```
-- **flags[0]** is intialized to 1 since block 0's initial offset is zero and is already available.
-- The remaining flags are zero because their corresponding values haven't been produced.
+* For this example, `scan_value[i]` stores the cumulative sum of all blocks preceding Block `i`. Therefore, Block 1 reads `scan_value[1]` to obtain its offset of 10, Block 2 reads `scan_value[2]` to obtain 36, and so on.
+
+* The entries are written as the corresponding blocks produce their cumulative sums. They do not all have to be available at the beginning.
+
+* **`flags`** indicates whether a cumulative sum is ready to be consumed by the corresponding block.
+
+```text
+flags = [1, 0, 0, 0, 0]
+```
+
+* Here, `flags[0]` is initialized to 1 because Block 0's initial offset is zero and is already available.
+* The remaining flags are initialized to zero because their corresponding cumulative sums have not yet been produced.
+* When a block finishes publishing its cumulative sum, it updates the corresponding flag to indicate that the value is ready.
+* The successor repeatedly checks its flag until the value becomes available. This is called **spin-waiting** or **busy-waiting**.
+* Once the flag indicates that the value is ready, the successor reads the cumulative sum, calculates its own cumulative sum, and publishes that value for the next block.
+
+### Why Are Atomic Operations Necessary?
+
+* The producer must ensure that its cumulative sum is visible before signaling the consumer that the value is ready.
+* The consumer must not read the cumulative sum before the producer has finished writing it.
+* Atomic operations with appropriate memory ordering establish this producer-consumer relationship and prevent the consumer from observing the ready flag without also observing the associated data.
+* In the textbook's implementation, atomic operations and `__threadfence()` are used to help enforce this ordering.
+
+### A Scheduling Problem
+
+* CUDA does not guarantee that blocks execute in increasing order of their built-in `blockIdx.x` values.
+* Suppose Block 3 starts executing before Block 2. If Block 3 occupies GPU resources while waiting for Block 2, and all available resources are occupied by blocks waiting for their predecessors, Block 2 might not be scheduled.
+* This can lead to a deadlock.
+* One solution discussed in the textbook is **dynamic block index assignment**, which assigns logical block indices using an atomic counter as blocks begin executing.
+* This helps ensure that a block assigned logical index `i` is not waiting for a predecessor that has never begun executing.
+* However, dynamic assignment alone does not guarantee that every predecessor will make progress immediately. A robust implementation must also account for GPU scheduling and forward-progress constraints.
+
