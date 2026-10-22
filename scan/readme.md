@@ -384,3 +384,197 @@ X = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
 * After this, the new array becomes **(10,36,78,136)**.
 
 * The last step of the segmented scan is to add the appropriate accumulated sums to the elements of their corresponding scan blocks. In this case, **36 is added to every element in scan block 2 except the last element if it has already been updated**, thus giving us **(45,55,66,78)**.
+
+# Single pass scan
+- Instead of launching three seperate kernels like in the case of the segmented scan kernel, we can perform the entire operation using a single kernel.
+- The main challenge here is that, CUDA thread blocks cannot normally synchronize with one another using **__syncthreads()** like in the case of how individual threads synchronize with other threads in the block they are in.
+
+## Recap of the three-kernel Segmented Scan
+- Given the following array below:
+```
+X = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
+```
+- Assuming each thread block processes four elements.
+- The array will be partitioned into four sections
+```
+block 0 : [1,2,3,4]
+block 1: [5,6,7,8]
+block 2: [9,10,11,12]
+block 3: [13,14,15,16]
+```
+- The main goal is to end up with the array below after inclusive scan:
+```
+Y = [1,3,6,10,15,21,28,28,36,45,55,66,78,91,105,120,136]
+```
+### Phase 1 :Local scan
+- Each block independently performs a parallel scan on its assigned section.
+- By using either Koggle-Stone or Brent-Kung
+```
+block 0 : [1,3,6,10]
+block 1: [5,11,18,26]
+block 2: [9,19,30,42]
+block 3: [13,27,42,58]
+```
+- The sums are stored in a seperate array:
+  ```
+  S = [10,26,42,58]
+  ```
+- The problem here is that the partially scanned results must be written to global memory because the first kernel is about to finish
+
+### Phase 2:Global scan
+- The second kernel performs a scan on the block sums.
+  ```
+  block_sums = S[10,26,42,58]
+  becomes:
+    S = [10,36,78,136]
+  ```
+  - After this the we have the cumulative sums of all preceding blocks
+  ```
+  block 0 needs an offset of 0 since it doesn't a preceding block
+  block 1 needs an offset of 10 from block 0
+  block 2 needs an offset of 36 from block 1
+  ```
+### Phase 3: Add the offsets
+- A third kernel reads the partially scanned results from the global memory.
+- Each bock adds it corresponding offset
+  ```
+  block 0 : [1,3,6,10]+0 = [1,3,6,10]
+  block 1 : [5,11,18,26]+10 = [15,21,28,36]
+  block 2: [9,19,30,42] + 36 = [45,55,66,78]
+  block 3: [13,27,42,58] + 78 = [91,105,120,136]
+  ```
+
+- After doing this we end up with the desired output inclusive scan
+
+##  Performance consideration
+- Kernel 1 follows this approach
+```
+Global Memory
+      |
+      | Read input
+      v
+   Thread Block
+      |
+      | Local scan
+      v
+Global Memory
+      |
+      | Write partial results
+      v
+```
+- Here we see that there both 1 phase global memory reads and writes.
+
+- Kernel 2 follows this approach :
+ ```
+ Read block sums
+       |
+       v
+Scan block sums
+       |
+       v
+Write scanned block sums
+  ```
+- There is 1 global memory read and write.
+
+- Kernel 3 follows this approach:
+ ```
+  Global Memory
+      |
+      | Read partial results again
+      v
+   Thread Block
+      |
+      | Add offsets
+      v
+Global Memory
+      |
+      | Write final results
+      v
+  ```
+- it also the same number of reads and writes as kernel one and two.
+- This whole process of accessing global memory can disadvatageus since these reads and write take time due to global memory traffic and it's expensive.
+- Also launching these three kernels results to **kernel-launch** overhead.
+
+## Solution
+To solve these whole issue of global memory accesses so as to improve performance we do the use a **single-pass scan**. Where instead of launching three kernels we can just lauch one kernel , we can launch a kernel whereby each thread block receives the cumulative sum its predecessor and passes an updated sum to its succcessor.
+
+### Step 1: All blocks perform their local sums
+- The blocks perform their can independetly resulting to:
+```
+Block 0             Block 1             Block 2
+
+[1, 3, 6, 10]      [5, 11, 18, 26]     [9, 19, 30, 42]
+
+Local sum = 10      Local sum = 26      Local sum = 42
+```
+- Here each block uses shared memory to compute its local scan.
+- The main difference here is that the partially scan results remain in the shared memory while the blocks determine their offsets.
+
+### Step 2: Block i passes its sum to block j
+- Block 0 doesn't need an offset because no elements precede it.
+- Thus:
+```
+Block 0:
+
+Offset = 0
+
+Local sum = 10
+
+Cumulative sum = 0 + 10 = 10
+```
+- Block 0 passes it cumulative sum to block 1
+  ```
+  block0 ----> 10 ---> block 1
+  ```
+- Block 1 passes it cumulative sum to block 2.
+- It first receives 10 from block 0
+- It uses this value in two ways as shown below:
+```
+previous sum =10
+local sum = 26
+cumulative sum = 10+26 = 36
+
+```
+- It passes 36 to block 2
+```
+block0 --->10-----> block 1 ----> 36 ----> block 2
+```
+- It adds the received offset to it's local scan resukts
+```
+Block 0:
+
+Offset = 0
+
+Local sum = 10
+
+Cumulative sum = 0 + 10 = 10
+```
+- continue with the rest
+
+## Communication among threadblocks
+- In CUDA threads synchronize with **__syncthreads()**. Thus threads within block 0 can sychronize with each other.
+- However, how can threads in block 1 synchronize with threads in block 0?
+- This is done **adjacent synchronization**.
+- This technique uses global memory and atomic operations to establish communication between neighboring blocks.
+
+### Adjacent synchronization using flags
+- Here two global arrays are needed, namely
+```
+int* scan_value
+int* flags
+```
+- **scan_value** stores cumulative sums passes between blocks
+```
+ scan_value[0] = 0
+scan_value[1] = 10
+scan_value[2] = 36
+scan_value[3] = 78
+scan_value[4] = 136
+ ```
+
+- **flags** - indicates whether a cumulative sum is ready to consumed by the successor block
+  ```
+  flags = [1, 0, 0, 0]
+  ```
+- **flags[0]** is intialized to 1 since block 0's initial offset is zero and is already available.
+- The remaining flags are zero because their corresponding values haven't been produced.
