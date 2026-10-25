@@ -49,11 +49,14 @@ void merge_sequential(int* A, int m, int* B, int n, int* C) {
 * For example:
 
 ```cpp
-A[0] = 5
+A[0] = 1
 B[0] = 2
 ```
 
-* Since `2 < 5`, the element `B[0]` (which is `2`) is copied to `C[0]`. Since `B[j]` is the element being copied to `C`, we increment `j` to point to the next element in **B**. We also increment `k` so that it points to `C[1]`, the position where the next element will be inserted.
+* Since `1 < 2`, the element `A[0]` (which is `1`) is copied to `C[0]`. Since `A[i]` is the element being copied to `C`, we increment `i` to point to the next element in **A**. We also increment `k` so that it points to `C[1]`, the position where the next element will be inserted.
 
-* This means that we will no longer compare `B[0]` with elements from **A**. Instead, in the next iteration, we will compare `A[0]` with `B[1]`, continuing until one of the input arrays has been fully processed.
-* Say incase we reach a point where array **B** is fully processed, our remaining task will be to copy the remaining elements of **A** into **C**. This work is done by the third while loop.
+* This means that we will no longer compare `A[0]` with elements from **B**. Instead, in the next iteration, we will compare `A[1]` with `B[0]`. This process continues until one of the input arrays has been fully processed.
+
+* Suppose we reach a point where array **B** has been fully processed. Our remaining task will be to copy the remaining elements of **A** into **C**. This work is done by the final `while` loop in the `else` block.
+
+* Since `n = 4`, which is the length of **B**, if `j == n`, it means array **B** has been fully processed. There are no more elements in **B** to compare with elements in **A**, so we copy the remaining elements of **A** into **C**. The same principle applies if **A** is fully processed first: we copy the remaining elements of **B** into **C**.
