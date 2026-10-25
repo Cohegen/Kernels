@@ -56,3 +56,4 @@ B[0] = 2
 * Since `2 < 5`, the element `B[0]` (which is `2`) is copied to `C[0]`. Since `B[j]` is the element being copied to `C`, we increment `j` to point to the next element in **B**. We also increment `k` so that it points to `C[1]`, the position where the next element will be inserted.
 
 * This means that we will no longer compare `B[0]` with elements from **A**. Instead, in the next iteration, we will compare `A[0]` with `B[1]`, continuing until one of the input arrays has been fully processed.
+* Say incase we reach a point where array **B** is fully processed, our remaining task will be to copy the remaining elements of **A** into **C**. This work is done by the third while loop.
