@@ -4,7 +4,7 @@
 #include <cuda_runtime.h>
 
 // Sequentially merge two sorted subarrays.
-void merge_sequential(const int* A, int m,const int* B, int n,int* C)
+__device__ void merge_sequential(const int* A, int m, const int* B, int n, int* C)
 {
     int i = 0;
     int j = 0;
@@ -35,7 +35,7 @@ void merge_sequential(const int* A, int m,const int* B, int n,int* C)
 
 // Find the co-rank for the first k elements
 // of the merged output.
-__device__ int co_rank(nt k,const int* A, int m,const int* B, int n)
+__device__ int co_rank(int k, const int* A, int m, const int* B, int n)
 {
     int i = min(k, m);
     int j = k - i;
@@ -69,7 +69,7 @@ __device__ int co_rank(nt k,const int* A, int m,const int* B, int n)
 }
 
 // Basic parallel merge kernel.
-__global__ void merge_basic_kernel(const int* A, int m,const int* B, int n,int* C)
+__global__ void merge_basic_kernel(const int* A, int m, const int* B, int n, int* C)
 {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
 
