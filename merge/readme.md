@@ -206,3 +206,7 @@ $$
 \boxed{(i,j) = (2,3)}
 $$
 
+# Co-rank function
+```cpp
+
+```
