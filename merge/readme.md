@@ -208,5 +208,36 @@ $$
 
 # Co-rank function
 ```cpp
+int co_rank(int k, const int* A, int m, const int* B, int n)
+{
+    int i = min(k, m);
+    int j = k - i;
 
+    int i_low = max(0, k - n);
+    int j_low = max(0, k - m);
+
+    while (true)
+    {
+        if (i > 0 && j < n && A[i - 1] > B[j])
+        {
+            int delta = (i - i_low + 1) >> 1;
+
+            j_low = j;
+            i -= delta;
+            j += delta;
+        }
+        else if (j > 0 && i < m && B[j - 1] >= A[i])
+        {
+            int delta = (j - j_low + 1) >> 1;
+
+            i_low = i;
+            i += delta;
+            j -= delta;
+        }
+        else
+        {
+            return i;
+        }
+    }
+}
 ```
