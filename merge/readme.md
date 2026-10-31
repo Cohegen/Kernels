@@ -61,88 +61,148 @@ B[0] = 2
 
 * Since `n = 4`, which is the length of **B**, if `j == n`, it means array **B** has been fully processed. There are no more elements in **B** to compare with elements in **A**, so we copy the remaining elements of **A** into **C**. The same principle applies if **A** is fully processed first: we copy the remaining elements of **B** into **C**.
 
-# Parralize approach
-- Say we have two sorted shown below:
-```
+# Parallel Merge Approach
+
+* Say we have two sorted arrays, as shown below:
+
+```cpp
 A = [1, 2, 3, 4, 5, 6]
 B = [7, 8, 9, 10, 11, 12]
 ```
-- And we're tasked to merge these two arrays in a fully sorted array **C**.
 
-- Say we have threads $T_{0}$ and $T_{1}$.We partition our input arrays such that each thread has a dedicated region it's suppose to look after .In these scenario we can each thread 6 output elements in array **C**, meaning each thread will compare 3 elements from both arrays.
-- $T_{0}$ will handle A[0]-A[2] and B[0] - B[2] while $T_{1}$ will handle A[3] to A[5] and B[3] to B[5]
-- From $T_{0}$ C[0:2] is:
-```
-C = [1,2,3,7,8,9]
-```
-- From $T_{1}$ C[3-5] is:
-```
-C = [4,5,6,10,11,12]
-```
+* We're tasked with merging these two arrays into a fully sorted array **C**.
 
-- If we were to concatenate the sub-arrays of C we would get:
-```
-C = [1,2,3,7,8,9,4,5,6,10,11,12]
+* Say we have two threads, $T_{0}$ and $T_{1}$. We partition our input arrays such that each thread has a dedicated region it's supposed to handle. In this scenario, we can assign each thread 6 output elements in array **C**, meaning each thread will merge 3 elements from each input array.
+
+* $T_{0}$ will handle A[0] to A[2] and B[0] to B[2], while $T_{1}$ will handle A[3] to A[5] and B[3] to B[5].
+
+* From $T_{0}$, the first 6 output elements are:
+
+```cpp
+C = [1, 2, 3, 7, 8, 9]
 ```
 
-- As you can see the final array **C** isn't fully sorted. So partitioning our input arrays isn't a good strategy.
-- We need a different strategy of merging the input arrays a good way to do this is to partition the output array.
+* From $T_{1}$, the next 6 output elements are:
 
-- To identify which regions of the output array to partition we use something known as a co-rank function
+```cpp
+C = [4, 5, 6, 10, 11, 12]
+```
 
-## Co-rank function
-- Given an array A containing `m` sorted elements.
-- Array B containing `n` sorted elements.
-- Array C will contain `m+n` merged elements.
-- For any output boundary `k` we want to find two indices: $i$ and $j$.
-- You can think of $k$ as the number which tells us how many output elements in C will each thread handle. $i$ and $j$ tells us how many elements of A and B respectively are needed to fill in $k$ spaces in array C.
-- So from this we can deduce that $k=i+j$ .
-- Given a rank `k=5` we're tasked to find the co-ranks $i$ and $j$. We determine k be dividing the number of elements in our expected out array C with the number of threads which is 2.
+* If we were to concatenate these subarrays, we would get:
+
+```cpp
+C = [1, 2, 3, 7, 8, 9, 4, 5, 6, 10, 11, 12]
 ```
-k = 10/2 = 5
+
+* As you can see, the final array **C** isn't fully sorted. Therefore, partitioning our input arrays into equal-sized regions isn't a reliable strategy.
+
+* We need a different strategy for merging the input arrays. A good approach is to partition the output array instead.
+
+* To identify which regions of the input arrays correspond to each output partition, we use something known as a **co-rank function**.
+
+## Co-Rank Function
+
+* Given an array **A** containing `m` sorted elements.
+
+* Array **B** contains `n` sorted elements.
+
+* Array **C** will contain `m + n` merged elements.
+
+* For any output boundary `k`, we want to find two indices: $i$ and $j$.
+
+* You can think of $k$ as the number of output elements preceding a particular boundary in **C**. The values $i$ and $j$ tell us how many elements from **A** and **B**, respectively, are needed to fill those first $k$ positions.
+
+* From this, we can deduce that:
+
+$$
+k = i + j
+$$
+
+* Given a rank `k = 5`, we're tasked with finding the co-ranks $i$ and $j$. In this example, we determine $k$ by dividing the total number of elements in our expected output array **C** by the number of threads, which is 2.
+
+```cpp
+k = 10 / 2 = 5
 ```
-- Given the arrays below:
-```
+
+* Given the arrays below:
+
+```cpp
 A = [2, 5, 8, 12, 15]
 B = [1, 3, 7, 10, 14]
 ```
-- We're tasked to find:
-```
+
+* We're tasked with producing:
+
+```cpp
 C = [1, 2, 3, 5, 7, 8, 10, 12, 14, 15]
 ```
-- Since `k=5` $T_{0}$ is responsible for producing C[0] to C[4] while $T_{1}$ is tasked to produce elements in C[5] to C[9].
-- Looking at the first five elements of C we can see that we need the first two elements of A and first 3 elements of B. Meaning for $T_{0}$, `i=2` and `j=3` meaning `k=i+j=2+3= 5`.
-- So for rank `k=5`, $(i,j) = (2,3)$
-- But how do we find out what the values of $i$ and $j$ are in the first place?
-- For a pair $i$ and $j$ to be considered as worthy co-ranks they must satisfy the rules below:
-```
-A[i-1] <= B[j]
-B[j-1] <= A[i]
-```
-- Say we're told that k=5, if you were to come the necessary co-ranks,  you have the combinations below:
-```
-(i,j) = (0,5),(1,4),(2,3)(3,2),(4,1),(5,0) 
-```
-- Let's get our hands dirty and work our way through these combinations
-- First any combination with 0 is a red flag, so let's elimenate them.
 
- i,j = (1,4)
+* Since `k = 5`, $T_{0}$ is responsible for producing C[0] to C[4], while $T_{1}$ is tasked with producing C[5] to C[9].
+
+* Looking at the first five elements of **C**, we can see that we need the first two elements of **A** and the first three elements of **B**. This means that for $T_{0}$, `i = 2` and `j = 3`.
+
+$$
+k = i + j = 2 + 3 = 5
+$$
+
+* Therefore, for rank `k = 5`, the co-ranks are:
+
+$$
+(i,j) = (2,3)
+$$
+
+* But how do we determine the values of $i$ and $j$ in the first place?
+
+* For a pair $(i,j)$ to be considered valid co-ranks, they must satisfy the following conditions:
+
+```cpp
+A[i - 1] <= B[j]
+B[j - 1] < A[i]
 ```
-using the formulas above:
+
+* These conditions apply when the referenced indices are within bounds. The strict inequality in the second condition ensures consistent handling of duplicate elements by prioritizing elements from **A**.
+
+* Say we're given `k = 5`. If we were to compute the possible co-rank combinations, we would get:
+
+```cpp
+(i,j) = (0,5), (1,4), (2,3), (3,2), (4,1), (5,0)
+```
+
+* Let's get our hands dirty and work through these combinations.
+
+* For simplicity, we'll start with combinations where both indices are greater than zero. However, combinations containing zero are also valid candidates and must be handled by a complete co-rank algorithm.
+
+### 1. Checking (i,j) = (1,4)
+
+Using the conditions above:
+
+```cpp
 A[0] <= B[4]
-2< 14 true
+2 <= 14 // true
 
-B[3] <= A[1]
-10 <5 false
+B[3] < A[1]
+10 < 5 // false
 ```
-- So we eliminate (1,4).
 
-1,j = (2,3).
-```
+* Since the second condition is false, we eliminate `(1,4)`.
+
+### 2. Checking (i,j) = (2,3)
+
+```cpp
 A[1] <= B[3]
-5<=10 true
+5 <= 10 // true
 
-B[2] <= A[2]
-7 < 8 true
+B[2] < A[2]
+7 < 8 // true
 ```
-- It has passed so we can use it as our co-ranks. There's no need to proceed with the rest since we can only have one combination which works.
+
+* Both conditions are satisfied, so we can use `(2,3)` as our co-ranks.
+
+* There's no need to proceed with the remaining combinations since we've found the unique pair of co-ranks that satisfies both conditions.
+
+* Therefore, for `k = 5`:
+
+$$
+\boxed{(i,j) = (2,3)}
+$$
+
