@@ -96,4 +96,30 @@ C = [1,2,3,7,8,9,4,5,6,10,11,12]
 - Array C will contain `m+n` merged elements.
 - For any output boundary `k` we want to find two indices: $i$ and $j$.
 - You can think of $k$ as the number which tells us how many output elements in C will each thread handle. $i$ and $j$ tells us how many elements of A and B respectively are needed to fill in $k$ spaces in array C.
-- So from this we can deduce that $k=i+j$
+- So from this we can deduce that $k=i+j$ .
+- Given a rank `k=5` we're tasked to find the co-ranks $i$ and $j$.
+- Given the arrays below:
+```
+A = [2, 5, 8, 12, 15]
+B = [1, 3, 7, 10, 14]
+```
+- We're tasked to find:
+```
+C = [1, 2, 3, 5, 7, 8, 10, 12, 14, 15]
+```
+- Since `k=5` $T_{0}$ is responsible for producing C[0] to C[4] while $T_{1}$ is tasked to produce elements in C[5] to C[9].
+- Looking at the first five elements of C we can see that we need the first two elements of A and first 3 elements of B. Meaning for $T_{0}$, `i=2` and `j=3` meaning `k=i+j=2+3= 5`.
+- So for rank `k=5`, $(i,j) = (2,3)$
+- But how do we find out what the values of $i$ and $j$ are in the first place?
+- For a pair $i$ and $j$ to be considered as worthy co-ranks they must satisfy the rules below:
+```
+A[i-1] <= B[j]
+B[j-1] <= A[i]
+```
+- Say we're told that k=5, if you were to come the necessary co-ranks,  you have the combinations below:
+```
+(i,j) = (0,5),(1,4),(2,3)(3,2),(4,1),(5,0) 
+```
+- Let's get our hands dirty and work our way through these combinations
+- First any combination with 0 is a red flag, so let's elimenate them.
+  
