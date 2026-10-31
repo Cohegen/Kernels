@@ -60,3 +60,12 @@ B[0] = 2
 * Suppose we reach a point where array **B** has been fully processed. Our remaining task will be to copy the remaining elements of **A** into **C**. This work is done by the final `while` loop in the `else` block.
 
 * Since `n = 4`, which is the length of **B**, if `j == n`, it means array **B** has been fully processed. There are no more elements in **B** to compare with elements in **A**, so we copy the remaining elements of **A** into **C**. The same principle applies if **A** is fully processed first: we copy the remaining elements of **B** into **C**.
+
+# Parralize approach
+- Say we have two sorted shown below:
+```
+A =[1,3,5,7,9,11]
+B= [2,4,6,8,10,12]
+```
+- And we're tasked to merge these two arrays in a fully sorted array **C**.
+- Say we have threads $T_{0}$ and $T_{1}$.
