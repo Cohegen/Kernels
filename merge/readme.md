@@ -97,7 +97,10 @@ C = [1,2,3,7,8,9,4,5,6,10,11,12]
 - For any output boundary `k` we want to find two indices: $i$ and $j$.
 - You can think of $k$ as the number which tells us how many output elements in C will each thread handle. $i$ and $j$ tells us how many elements of A and B respectively are needed to fill in $k$ spaces in array C.
 - So from this we can deduce that $k=i+j$ .
-- Given a rank `k=5` we're tasked to find the co-ranks $i$ and $j$.
+- Given a rank `k=5` we're tasked to find the co-ranks $i$ and $j$. We determine k be dividing the number of elements in our expected out array C with the number of threads which is 2.
+```
+k = 10/2 = 5
+```
 - Given the arrays below:
 ```
 A = [2, 5, 8, 12, 15]
@@ -122,4 +125,24 @@ B[j-1] <= A[i]
 ```
 - Let's get our hands dirty and work our way through these combinations
 - First any combination with 0 is a red flag, so let's elimenate them.
-  
+
+ i,j = (1,4)
+```
+using the formulas above:
+A[0] <= B[4]
+2< 14 true
+
+B[3] <= A[1]
+10 <5 false
+```
+- So we eliminate (1,4).
+
+1,j = (2,3).
+```
+A[1] <= B[3]
+5<=10 true
+
+B[2] <= A[2]
+7 < 8 true
+```
+- It has passed so we can use it as our co-ranks. There's no need to proceed with the rest since we can only have one combination which works.
