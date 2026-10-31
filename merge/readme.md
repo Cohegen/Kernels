@@ -64,8 +64,36 @@ B[0] = 2
 # Parralize approach
 - Say we have two sorted shown below:
 ```
-A =[1,3,5,7,9,11]
-B= [2,4,6,8,10,12]
+A = [1, 2, 3, 4, 5, 6]
+B = [7, 8, 9, 10, 11, 12]
 ```
 - And we're tasked to merge these two arrays in a fully sorted array **C**.
-- Say we have threads $T_{0}$ and $T_{1}$.
+
+- Say we have threads $T_{0}$ and $T_{1}$.We partition our input arrays such that each thread has a dedicated region it's suppose to look after .In these scenario we can each thread 6 output elements in array **C**, meaning each thread will compare 3 elements from both arrays.
+- $T_{0}$ will handle A[0]-A[2] and B[0] - B[2] while $T_{1}$ will handle A[3] to A[5] and B[3] to B[5]
+- From $T_{0}$ C[0:2] is:
+```
+C = [1,2,3,7,8,9]
+```
+- From $T_{1}$ C[3-5] is:
+```
+C = [4,5,6,10,11,12]
+```
+
+- If we were to concatenate the sub-arrays of C we would get:
+```
+C = [1,2,3,7,8,9,4,5,6,10,11,12]
+```
+
+- As you can see the final array **C** isn't fully sorted. So partitioning our input arrays isn't a good strategy.
+- We need a different strategy of merging the input arrays a good way to do this is to partition the output array.
+
+- To identify which regions of the output array to partition we use something known as a co-rank function
+
+## Co-rank function
+- Given an array A containing `m` sorted elements.
+- Array B containing `n` sorted elements.
+- Array C will contain `m+n` merged elements.
+- For any output boundary `k` we want to find two indices: $i$ and $j$.
+- You can think of $k$ as the number which tells us how many output elements in C will each thread handle. $i$ and $j$ tells us how many elements of A and B respectively are needed to fill in $k$ spaces in array C.
+- So from this we can deduce that $k=i+j$
