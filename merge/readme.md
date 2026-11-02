@@ -206,7 +206,8 @@ $$
 \boxed{(i,j) = (2,3)}
 $$
 
-# Co-rank function
+# Co-Rank Function
+
 ```cpp
 int co_rank(int k, const int* A, int m, const int* B, int n)
 {
@@ -241,6 +242,7 @@ int co_rank(int k, const int* A, int m, const int* B, int n)
     }
 }
 ```
+
 ```cpp
 __global__ void merge_basic_kernel(const int* A, int m, const int* B, int n, int* C)
 {
@@ -278,144 +280,196 @@ __global__ void merge_basic_kernel(const int* A, int m, const int* B, int n, int
     );
 }
 ```
-- Given two arrays as shown below:
+
+* Given two arrays, as shown below:
+
 ```
-A = [1,3,5,7,9]
-B= [2,4,6,8,10]
+A = [1, 3, 5, 7, 9]
+B = [2, 4, 6, 8, 10]
 ```
-- We're tasked with merge both arrays into our output array **C**.
-- Assuming our block has 2 threads meaning `blockDim.x=2` and our grid only has one block meaning `gridDimx=1`. The total number of threads will be `2*1=2`, whereas the total number of elements will `m+n=5+5=10` since both of our input arrays have five elements meaning array **C** will have 10 elements in total.
-- And `elementsPerThread` will be
+
+* We're tasked with merging both arrays into our output array **C**.
+
+* Assuming our block has 2 threads, meaning `blockDim.x = 2`, and our grid contains only one block, meaning `gridDim.x = 1`.
+
+* The total number of threads will be `2 * 1 = 2`, whereas the total number of elements will be `m + n = 5 + 5 = 10`. Since both input arrays contain five elements, array **C** will contain 10 elements in total.
+
+* Our `elementsPerThread` will be:
+
 ```
-elementsPerThread = (10+2-1)/ 2 = 5
+elementsPerThread = (10 + 2 - 1) / 2 = 5
 ```
-- So `index` can either be `0` or `1` since we only have 2 threads in our block.
-- Let's use thread 1 / $T_{0}$ as our use case for finding out the rest of the variables.
-- For $T_{0}$
+
+* Therefore, `index` can either be `0` or `1`, since we only have two threads in our block.
+
+* Let's use thread 0 ($T_{0}$) as our example to find the remaining variables.
+
+### For $T_{0}$
+
 ```
-k_curr = 0*5 = 0
-k_next = min(0+5,10) = 5
+k_curr = 0 * 5 = 0
+k_next = min(0 + 5, 10) = 5
 ```
-- We then call the `co_rank` function using `k_curr` and `k_next` as parameters respectively find out the values of `i_curr` and `i_next` respectively.
+
+* We then call the `co_rank` function using `k_curr` and `k_next` as arguments to determine the values of `i_curr` and `i_next`, respectively.
+
 ```
-i_curr = co_rank(0,A,5,B,5)
-i_next = co_rank(5,A,5,B,5)
+i_curr = co_rank(0, A, 5, B, 5)
+i_next = co_rank(5, A, 5, B, 5)
 ```
 
 ## Finding `i_curr`
-- For this:
+
+* For this call:
+
 ```
-k=0
-m=5
-n=5
-```
-- Using our `co_rank` function above
-```
-i = min(0,5) = 0
-j = 0-0 = 0
-i_low = max(0,0-5) = 0
-j_low = max(0,0-5) = 0
+k = 0
+m = 5
+n = 5
 ```
 
-Within the body of the while loop block specifically since `i` and `j` do not satisfy both conditions in both the `if` and `else` blocks respectively, the while loop is terminated. Thus return i as `0` so `i_curr=0`.
+* Using our `co_rank` function above:
+
+```
+i = min(0, 5) = 0
+j = 0 - 0 = 0
+i_low = max(0, 0 - 5) = 0
+j_low = max(0, 0 - 5) = 0
+```
+
+* Within the body of the `while` loop, neither the `if` nor the `else if` condition is satisfied. Therefore, we exit the loop and return `i`, which is `0`.
+
+* Hence, `i_curr = 0`.
 
 ## Finding `i_next`
-- For this
+
+* For this call:
+
 ```
-k=5
-m=5
-n=5
+k = 5
+m = 5
+n = 5
 ```
 
-- Based on how we've called the `co_rank` function:
+* Based on how we've called the `co_rank` function:
+
 ```
-i = min(5,5)=5
-j = 5-5 =0
-i_low = max(0,0-5) =0
-j_low = max(0,0-5) =0
+i = min(5, 5) = 5
+j = 5 - 5 = 0
+i_low = max(0, 5 - 5) = 0
+j_low = max(0, 5 - 5) = 0
 ```
-- Within the while loop since the conditions in the if block is satisfied
+
+* Within the `while` loop, the conditions in the `if` block are satisfied.
+
 ```
-i=5>0 -> True
+i = 5 > 0 -> True
 j = 0 < 5 -> True
-A[4] > B[0] -> 9>2 - true
+A[4] > B[0] -> 9 > 2 -> True
 
-delta = (5-0+1)/2 =3
-j_low = j =0
-j= j+ delta = 0+3 = 3
-i = i-delta = 5-3 = 2
+delta = (5 - 0 + 1) / 2 = 3
 
+j_low = j = 0
+j = j + delta = 0 + 3 = 3
+i = i - delta = 5 - 3 = 2
 ```
-- From the calculations above:
+
+* From the calculations above:
+
 ```
 i = 2
 j = 3
-i_low =0
+i_low = 0
 j_low = 0
 ```
-- In the second iteration, the conditions in the else if block are satisfied
-```
-j=3>0 -> true
-i<=2<5 -> true
-B[2] >= A[2] -> 6>= 5 --> true
 
-delta = (3-0+1)/2 = 2
+* In the second iteration, the conditions in the `else if` block are satisfied.
+
+```
+j = 3 > 0 -> True
+i = 2 < 5 -> True
+B[2] >= A[2] -> 6 >= 5 -> True
+
+delta = (3 - 0 + 1) / 2 = 2
+
 i_low = i = 2
-i = i+ delta = 2+2 =4
-j = j-delta = 3-2 =1
+i = i + delta = 2 + 2 = 4
+j = j - delta = 3 - 2 = 1
 ```
 
-- From the calculation above:
+* From the calculations above:
+
 ```
 i = 4
-j=1
-i_low =2
+j = 1
+i_low = 2
 j_low = 0
 ```
-- In the third iteration, the conditions in the if block are satisfied:
+
+* In the third iteration, the conditions in the `if` block are satisfied.
+
 ```
-delta = (4-2+1)/2 =1
+delta = (4 - 2 + 1) / 2 = 1
+
 j_low = j = 1
-j = j+ delta = 1+1 =2
-i = i-delta = 4-1 = 3
+j = j + delta = 1 + 1 = 2
+i = i - delta = 4 - 1 = 3
 ```
-- From the calculation above:
+
+* From the calculations above:
+
 ```
 i = 3
 j = 2
-i_low =2
-j_low 1
+i_low = 2
+j_low = 1
 ```
-- In the forth iteratiom, the conditions in both the if and else if block aren't satisfied so we terminated the while loop.
-- And we conclude `i_next=3`.
+
+* In the fourth iteration, neither the `if` nor the `else if` conditions are satisfied. Therefore, we exit the `while` loop.
+
+* We can now conclude that `i_next = 3`.
 
 ## Finding `j_curr`
-- From the code in the kernel
-  ```
-  j_curr =k_curr - i_curr
-  j_curr = 0-0 =0
-  ```
-## Finding `j_next`
-- From the code in the kernel
- ```
-j_next = k_next - i_next
-j_next = 5-3=2
+
+* From the code in the kernel:
+
+```cpp
+j_curr = k_curr - i_curr;
+j_curr = 0 - 0 = 0;
 ```
 
-## Calling the merge function
-- After we've gotten the full info .. for $T_{0}$ we call the `merge_sequential`:
+## Finding `j_next`
+
+* From the code in the kernel:
+
+```cpp
+j_next = k_next - i_next;
+j_next = 5 - 3 = 2;
 ```
+
+## Calling the Merge Function
+
+* After obtaining all the necessary information for $T_{0}$, we call the `merge_sequential` function:
+
+```cpp
 merge_sequential(
-     &A[i_curr],
-      i_next-i_curr,
-      &B[j_curr],
-      j_next-j_curr,
-      &C[k_curr]
+    &A[i_curr],
+    i_next - i_curr,
+    &B[j_curr],
+    j_next - j_curr,
+    &C[k_curr]
 );
- 
 ```
-- While is:
+
+* Which is equivalent to:
+
+```cpp
+merge_sequential(&A[0], 3, &B[0], 2, &C[0]);
 ```
-merge_sequential(&A[0],3,&B[0],2,&C[0])
-```
-- `&A[0]` is a pointer to the first element of A and 3 means that we're picking three elements from A while `&B[0]` is a pointer to the first element of the array B while 2 means that we're be taking the first two elements of B. `&C[0]` is a pointer the first element of C
+
+* `&A[0]` is a pointer to the first element of array **A**, while `3` indicates that we're taking three elements from **A**.
+
+* Similarly, `&B[0]` is a pointer to the first element of array **B**, while `2` indicates that we're taking the first two elements from **B**.
+
+* Finally, `&C[0]` is a pointer to the first element of our output array **C**, where the merged elements will be written.
+
