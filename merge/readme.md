@@ -278,3 +278,12 @@ __global__ void merge_basic_kernel(const int* A, int m, const int* B, int n, int
     );
 }
 ```
+- Given two arrays as shown below:
+```
+A = [1,3,5,7,9]
+B= [2,4,6,8,10]
+```
+- We're tasked with merge both arrays into our output array **C**.
+- Assuming our block has 2 threads meaning `blockDim.x=2` and our grid only has one block meaning `gridDimx=1`. The total number of threads will be `2*1=2`, whereas the total number of elements will `m+n=5+5=10` since both of our input arrays have five elements meaning array **C** will have 10 elements in total.
+- So `index` can either be `0` or `1` since we only have 2 threads in our block.
+- Let's use thread 1 / $T_{0}$ as our use case for finding out the rest of the variables.
