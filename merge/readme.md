@@ -241,3 +241,40 @@ int co_rank(int k, const int* A, int m, const int* B, int n)
     }
 }
 ```
+```cpp
+__global__ void merge_basic_kernel(const int* A, int m, const int* B, int n, int* C)
+{
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    int totalElements = m + n;
+    int totalThreads = blockDim.x * gridDim.x;
+
+    // Ceiling division.
+    int elementsPerThread = (totalElements + totalThreads - 1) / totalThreads;
+
+    int k_curr = index * elementsPerThread;
+
+    // No output elements remain for this thread.
+    if (k_curr >= totalElements)
+        return;
+
+    int k_next = min(
+        k_curr + elementsPerThread,
+        totalElements
+    );
+
+    // Find input boundaries for this thread.
+    int i_curr = co_rank(k_curr, A, m, B, n);
+    int i_next = co_rank(k_next, A, m, B, n);
+
+    int j_curr = k_curr - i_curr;
+    int j_next = k_next - i_next;
+
+    // Merge the assigned input subarrays.
+    merge_sequential(
+        A + i_curr, i_next - i_curr,
+        B + j_curr, j_next - j_curr,
+        C + k_curr
+    );
+}
+```
