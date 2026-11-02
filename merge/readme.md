@@ -285,5 +285,137 @@ B= [2,4,6,8,10]
 ```
 - We're tasked with merge both arrays into our output array **C**.
 - Assuming our block has 2 threads meaning `blockDim.x=2` and our grid only has one block meaning `gridDimx=1`. The total number of threads will be `2*1=2`, whereas the total number of elements will `m+n=5+5=10` since both of our input arrays have five elements meaning array **C** will have 10 elements in total.
+- And `elementsPerThread` will be
+```
+elementsPerThread = (10+2-1)/ 2 = 5
+```
 - So `index` can either be `0` or `1` since we only have 2 threads in our block.
 - Let's use thread 1 / $T_{0}$ as our use case for finding out the rest of the variables.
+- For $T_{0}$
+```
+k_curr = 0*5 = 0
+k_next = min(0+5,10) = 5
+```
+- We then call the `co_rank` function using `k_curr` and `k_next` as parameters respectively find out the values of `i_curr` and `i_next` respectively.
+```
+i_curr = co_rank(0,A,5,B,5)
+i_next = co_rank(5,A,5,B,5)
+```
+
+## Finding `i_curr`
+- For this:
+```
+k=0
+m=5
+n=5
+```
+- Using our `co_rank` function above
+```
+i = min(0,5) = 0
+j = 0-0 = 0
+i_low = max(0,0-5) = 0
+j_low = max(0,0-5) = 0
+```
+
+Within the body of the while loop block specifically since `i` and `j` do not satisfy both conditions in both the `if` and `else` blocks respectively, the while loop is terminated. Thus return i as `0` so `i_curr=0`.
+
+## Finding `i_next`
+- For this
+```
+k=5
+m=5
+n=5
+```
+
+- Based on how we've called the `co_rank` function:
+```
+i = min(5,5)=5
+j = 5-5 =0
+i_low = max(0,0-5) =0
+j_low = max(0,0-5) =0
+```
+- Within the while loop since the conditions in the if block is satisfied
+```
+i=5>0 -> True
+j = 0 < 5 -> True
+A[4] > B[0] -> 9>2 - true
+
+delta = (5-0+1)/2 =3
+j_low = j =0
+j= j+ delta = 0+3 = 3
+i = i-delta = 5-3 = 2
+
+```
+- From the calculations above:
+```
+i = 2
+j = 3
+i_low =0
+j_low = 0
+```
+- In the second iteration, the conditions in the else if block are satisfied
+```
+j=3>0 -> true
+i<=2<5 -> true
+B[2] >= A[2] -> 6>= 5 --> true
+
+delta = (3-0+1)/2 = 2
+i_low = i = 2
+i = i+ delta = 2+2 =4
+j = j-delta = 3-2 =1
+```
+
+- From the calculation above:
+```
+i = 4
+j=1
+i_low =2
+j_low = 0
+```
+- In the third iteration, the conditions in the if block are satisfied:
+```
+delta = (4-2+1)/2 =1
+j_low = j = 1
+j = j+ delta = 1+1 =2
+i = i-delta = 4-1 = 3
+```
+- From the calculation above:
+```
+i = 3
+j = 2
+i_low =2
+j_low 1
+```
+- In the forth iteratiom, the conditions in both the if and else if block aren't satisfied so we terminated the while loop.
+- And we conclude `i_next=3`.
+
+## Finding `j_curr`
+- From the code in the kernel
+  ```
+  j_curr =k_curr - i_curr
+  j_curr = 0-0 =0
+  ```
+## Finding `j_next`
+- From the code in the kernel
+ ```
+j_next = k_next - i_next
+j_next = 5-3=2
+```
+
+## Calling the merge function
+- After we've gotten the full info .. for $T_{0}$ we call the `merge_sequential`:
+```
+merge_sequential(
+     &A[i_curr],
+      i_next-i_curr,
+      &B[j_curr],
+      j_next-j_curr,
+      &C[k_curr]
+);
+ 
+```
+- While is:
+```
+merge_sequential(&A[0],3,&B[0],2,&C[0])
+```
+- `&A[0]` is a pointer to the first element of A and 3 means that we're picking three elements from A while `&B[0]` is a pointer to the first element of the array B while 2 means that we're be taking the first two elements of B. `&C[0]` is a pointer the first element of C
