@@ -22,9 +22,11 @@ int main() {
     for (int i = 0; i < m; ++i) h_A[i] = dis(gen);
     for (int i = 0; i < n; ++i) h_B[i] = dis(gen);
 
+    //sorting elements in h_A and h_B arrays
     std::sort(h_A.begin(), h_A.end());
     std::sort(h_B.begin(), h_B.end());
 
+     //naively merging h_A and h_B in the host
     std::vector<int> h_C_cpu(m + n);
     std::merge(h_A.begin(), h_A.end(), h_B.begin(), h_B.end(), h_C_cpu.begin());
 
