@@ -1,4 +1,4 @@
-#include <iostream>
+
 #include <cuda_runtime.h>
 
 __device__ void merge_sequential_tiled(const int* A, int m, const int* B, int n, int* C)
