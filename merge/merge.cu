@@ -1,4 +1,3 @@
-
 #include <iostream>
 #include <algorithm>
 #include <cuda_runtime.h>
@@ -105,4 +104,3 @@ __global__ void merge_basic_kernel(const int* A, int m, const int* B, int n, int
         C + k_curr
     );
 }
-
