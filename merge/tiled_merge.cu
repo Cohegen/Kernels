@@ -95,6 +95,7 @@ __global__ void tiled_merge(int* A, int m, int* B, int n, int* C, int tile_size)
     int A_consumed = 0;
     int B_consumed = 0;
 
+    //co-operatively loading elements of A and B in shared memory A_S and B_S
     while (counter < total_iters)
     {
         for (int i = 0; i < tile_size; i += blockDim.x)
@@ -113,6 +114,7 @@ __global__ void tiled_merge(int* A, int m, int* B, int n, int* C, int tile_size)
         }
         __syncthreads();
 
+        //dividing threads output tile among threads;
         int c_curr = threadIdx.x * (tile_size / blockDim.x);
         int c_next = (threadIdx.x + 1) * (tile_size / blockDim.x);
         c_curr = (c_curr <= C_length - C_completed) ? c_curr : C_length - C_completed;
