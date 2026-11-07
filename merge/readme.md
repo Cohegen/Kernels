@@ -473,3 +473,35 @@ merge_sequential(&A[0], 3, &B[0], 2, &C[0]);
 
 * Finally, `&C[0]` is a pointer to the first element of our output array **C**, where the merged elements will be written.
 
+# Tiled merge
+- The merge kernel has it's downside namely when calling the co-rank and merge functions, we're accessing data in memory in an uncoalesced manner.
+- To fix this issue we loading the data into shared memory.
+- However, let's say both of our arrays **A** and **B** have  6000 elements. The shared memory may have a limited memory capacity such that it can accomodate say at most 2048 elements. Facing this obstacle we perform tile-based loading of data into shared memory
+
+## Deep dive
+- Given the following metrics:
+```
+m=6000
+n=6000
+num_blocks = 4
+num_threads_per_block = 128
+tile_size=1024
+```
+- We first declare out shared memory array which as shown below:
+```cpp
+  extern __shared__ int shareAB[];
+```
+- Note we haven't specified its size meaning it can be of any size but it's size must be less or equal to the maximum amount not more .
+- We also define some statements like shown below:
+```cpp
+int* A_S = &shareAB[0];
+int* B_S = &shareAB[tile_size];
+```
+- The statements above are points to addresses of locations of where the first elements of arrays **A** and  **B** are.
+- So from `shareAB[0]-sharedAB[1023]` a chunk of 1024 elements from A are copied there whereas from `shareAB[tile_size]-shareAB[N]` a chunk of 1024 elements from B are copied there.
+
+## Block-level merge
+- Each block is assigned a region in the output array **C** it will responsible for.
+- So for $block_{0}$ to find out which region of output array **C** it will responsible for, we need these statements:
+```cpp
+```
