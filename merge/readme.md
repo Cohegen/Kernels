@@ -473,272 +473,506 @@ merge_sequential(&A[0], 3, &B[0], 2, &C[0]);
 
 * Finally, `&C[0]` is a pointer to the first element of our output array **C**, where the merged elements will be written.
 
-# Tiled merge
-- The merge kernel has it's downside namely when calling the co-rank and merge functions, we're accessing data in memory in an uncoalesced manner.
-- To fix this issue we loading the data into shared memory.
-- However, let's say both of our arrays **A** and **B** have  6000 elements. The shared memory may have a limited memory capacity such that it can accomodate say at most 2048 elements. Facing this obstacle we perform tile-based loading of data into shared memory
+# Tiled Merge
 
-## Deep dive
+- The basic merge kernel has a downside. When calling the co-rank and merge functions, threads may access data in global memory in an uncoalesced manner.
+- To address this issue, we load the data into shared memory before performing the merge operations.
+- However, let's say both of our arrays **A** and **B** contain 6000 elements each. Shared memory has limited capacity, meaning we might not be able to load all 12,000 elements into it at once.
+- To overcome this limitation, we perform **tile-based loading**, where we load smaller chunks of data into shared memory and process them iteratively.
+
+## Deep Dive
+
 - Given the following metrics:
+
 ```
-m=6000
-n=6000
+m = 6000
+n = 6000
 num_blocks = 4
 num_threads_per_block = 128
-tile_size=1024
+tile_size = 1024
 ```
-- We first declare out shared memory array which as shown below:
+
+- We first declare our shared memory array, as shown below:
+
 ```cpp
-  extern __shared__ int shareAB[];
+extern __shared__ int shareAB[];
 ```
-- Note we haven't specified its size meaning it can be of any size but it's size must be less or equal to the maximum amount not more .
-- We also define some statements like shown below:
+
+- Notice that we haven't explicitly specified its size. This is because we're using dynamically allocated shared memory. Its size is specified when launching the kernel and must not exceed the available shared memory limit per block.
+- We also define some pointers, as shown below:
+
 ```cpp
 int* A_S = &shareAB[0];
 int* B_S = &shareAB[tile_size];
 ```
-- The statements above are points to addresses of locations of where the first elements of arrays **A** and  **B** are.
-- So from `shareAB[0]-sharedAB[1023]` a chunk of 1024 elements from A are copied there whereas from `shareAB[tile_size]-shareAB[N]` a chunk of 1024 elements from B are copied there.
 
-## Block-level merge
-- Each block is assigned a region in the output array **C** it will responsible for.
-- So for $block_{0}$ to find out which region of output array **C** it will responsible for, we need these statements:
+- The statements above point to the memory locations where we'll store elements from arrays **A** and **B**, respectively.
+- Since `tile_size = 1024`, our shared memory array is logically divided into two regions:
+  - `shareAB[0]` to `shareAB[1023]` will hold a tile of 1024 elements from **A**.
+  - `shareAB[1024]` to `shareAB[2047]` will hold a tile of 1024 elements from **B**.
+- This means we'll need `2048 * sizeof(int)` bytes of dynamically allocated shared memory per block.
+
+## Block-Level Merge
+
+- Each block is assigned a region in the output array **C** that it will be responsible for producing.
+- So, for $block_{0}$ to determine which region of output array **C** it will be responsible for, we need the following statements:
+
 ```cpp
 int C_curr = blockIdx.x * ((m + n + gridDim.x - 1) / gridDim.x);
-int C_next = min((blockIdx.x + 1) * ((m + n + gridDim.x - 1) / gridDim.x), (m + n));
+
+int C_next = min(
+    (blockIdx.x + 1) * ((m + n + gridDim.x - 1) / gridDim.x),
+    (m + n)
+);
 ```
+
 - Let's get our hands dirty and calculate the values above.
-- Since for $block_{0}$
+- Since we're dealing with $block_{0}$:
+
 ```
 blockIdx.x = 0
-gridDim.x = 4 .. since we have 4 threadblocks
+gridDim.x = 4 // Since we have 4 blocks.
 ```
-- So:
-```
-C_curr = 0*((6000+6000)+4-1)/4) = 0
-C_next = min((0+1)*(6000+6000+4-1)/gridDim.x),(6000+6000) = 3000
-```
-- So `C_curr=0` and `C_next=3000`, meaning $block_{0}$ is responsible for writing the first 3000 elements of array **C**.
 
-- Now we need to know which regions of shared memory subarrays `A_S` and `B_S`, $block_{0}$ will be responsible for:
-- The code below helps us to do so:
+- Therefore:
+
+```
+C_curr = 0 * ((6000 + 6000 + 4 - 1) / 4) = 0
+
+C_next = min(
+    (0 + 1) * ((6000 + 6000 + 4 - 1) / 4),
+    12000
+) = 3000
+```
+
+- So, `C_curr = 0` and `C_next = 3000`, meaning $block_{0}$ is responsible for writing the first 3000 elements of array **C**, corresponding to the range `[0, 3000)`.
+
+- Now we need to determine which regions of the input arrays **A** and **B** $block_{0}$ will be responsible for merging.
+- The code below helps us do that:
+
 ```cpp
 if (threadIdx.x == 0)
-    {
-        A_S[0] = co_rank_tiled(C_curr, A, m, B, n);
-        A_S[1] = co_rank_tiled(C_next, A, m, B, n);
-    }
+{
+    A_S[0] = co_rank_tiled(C_curr, A, m, B, n);
+    A_S[1] = co_rank_tiled(C_next, A, m, B, n);
+}
 
-    __syncthreads();
+__syncthreads();
 
-    int A_curr = A_S[0];
-    int A_next = A_S[1];
-    int B_curr = C_curr - A_curr;
-    int B_next = C_next - A_next;
+int A_curr = A_S[0];
+int A_next = A_S[1];
 
-    __syncthreads();
+int B_curr = C_curr - A_curr;
+int B_next = C_next - A_next;
+
+__syncthreads();
 ```
-- The thread with index 0 i.e $T_{0}$ in the if block will responsible for calculating the co-rank values $i$ and $j$ so that we'll know what amount of elements from **A**, we'll use:
-- Let's get our hands dirty and do the maths
+
+- The thread with index 0, i.e., $T_{0}$, is responsible for calculating the co-rank values. Specifically, we're interested in finding out how many elements from **A** and **B** are needed to produce the output region assigned to our block.
+- Notice that we're only storing the co-rank values from **A** in shared memory. We can obtain the corresponding co-rank values from **B** using the relationship:
+
+$$
+k = i + j
+$$
+
+- Let's get our hands dirty and do the maths.
+
+For this example, let's assume the co-rank calculations produce the following results:
+
 ```
 A_S[0] = 0
-A_S[1] = 1000 .. Note that this is a wild guess since A_S[1] is dependant on how the array A's elements look like
+A_S[1] = 1000
 ```
+
+- Note that these are hypothetical values. The actual co-ranks depend on the contents of arrays **A** and **B**.
+
 - With the information above:
+
 ```
 A_curr = A_S[0] = 0
 A_next = A_S[1] = 1000
-B_curr = C_curr- A_curr = 0-0= 0
-B_next = C_next-A_next = 3000-1000=2000
-```
-- From the data above we conclude that $block_{0}$ needs the first 1000 elements from array **A** and  needs the first 3000 elements from array **B**.
 
-## How many Iteration will $block_0$ need to fully write it's output elements?
-- From the previous sections we realized that $block_{0}$ is responsible for the C[0-3000] region.
-- However the block can't load all 3000 elements into shared memory in one around one go.
-- In our case since $block_0$ has a space of 1024 elements for both arrays A and B in shared memory. the full chunk of A will be loaded into shared memory in one round since it's chunk_size is 1000 which is less than tile_size = 1024 , whereas since the chunk size is 2000 which is greater than 1024. Hence for B round one will load 1024 and round 2 will load the remaining 976 elements.
-- But how do we know the number of iterations needed in code? We use the code snippet below to find out:
+B_curr = C_curr - A_curr = 0 - 0 = 0
+B_next = C_next - A_next = 3000 - 1000 = 2000
+```
+
+- From the calculations above, we conclude that $block_{0}$ needs the first 1000 elements from array **A** and the first 2000 elements from array **B**.
+- In other words, our block has been assigned 3000 output elements, which will be produced by merging these 3000 input elements.
+
+## How Many Iterations Will $block_{0}$ Need to Fully Write Its Output Elements?
+
+- From the previous section, we established that $block_{0}$ is responsible for the output region `[0, 3000)`.
+- However, the block can't load all 3000 elements into shared memory in one go.
+- In our case, we have space for 1024 elements from **A** and another 1024 elements from **B** in shared memory.
+- Since the chunk of **A** assigned to our block contains 1000 elements, we can load the entire chunk in one round because its size is less than `tile_size = 1024`.
+- However, the chunk from **B** contains 2000 elements, which is greater than our tile size. Therefore:
+  - Round 1 will load 1024 elements from **B**.
+  - Round 2 will load the remaining 976 elements from **B**.
+- But how do we determine the number of iterations needed in code?
+- We use the following code snippet:
+
 ```cpp
 int counter = 0;
+
 int C_length = C_next - C_curr;
 int A_length = A_next - A_curr;
 int B_length = B_next - B_curr;
+
 int total_iters = (C_length + tile_size - 1) / tile_size;
+
 int C_completed = 0;
 int A_consumed = 0;
 int B_consumed = 0;
+```
+
+- The `counter` variable keeps track of the number of iterations we've completed so far.
+- Now let's calculate the remaining variables:
 
 ```
-- The `counter` variable counts the iterations we've endures so far.
-- Now let's handle the rest:
-```
-C_length = C_next-C_curr = 3000-0 = 3000
-A_length = A_length- A_curr = 1000-0 = 1000
-B_length = B_next - B_curr = 2000-0=2000
-total_iters = (C_length+tile_size-1)/tile_size = 3000+1023/1024 =~3
-```
-- Meaning three block-level load to shared memory iterations
-- The variables `C_completed,A_consumed,B_consumed` tells us how regions of A and B have been used and how many regions C have been written.
+C_length = C_next - C_curr
+         = 3000 - 0
+         = 3000
 
-## Thread-level loading
-- We've discovered that in our case $block_{0}$ needs 3 rounds to write the values to C.
+A_length = A_next - A_curr
+         = 1000 - 0
+         = 1000
+
+B_length = B_next - B_curr
+         = 2000 - 0
+         = 2000
+
+total_iters = (C_length + tile_size - 1) / tile_size
+
+            = (3000 + 1024 - 1) / 1024
+
+            = 4023 / 1024
+
+            = 3
+```
+
+- This means we'll need three block-level iterations to produce all 3000 output elements.
+- But what exactly do `C_completed`, `A_consumed`, and `B_consumed` represent?
+  - `C_completed` keeps track of how many output elements we've written to **C** so far.
+  - `A_consumed` keeps track of how many elements we've consumed from the assigned region of **A**.
+  - `B_consumed` does the same for **B**.
+- These variables help us keep track of our progress across iterations so that we don't process the same input elements repeatedly.
+
+## Thread-Level Loading
+
+- We've established that $block_{0}$ needs three iterations to produce its assigned output elements.
 - Given the code below:
+
 ```cpp
- while (counter < total_iters)
+while (counter < total_iters)
+{
+    for (int i = 0; i < tile_size; i += blockDim.x)
     {
-        for (int i = 0; i < tile_size; i += blockDim.x)
+        if (i + threadIdx.x < A_length - A_consumed)
         {
-            if (i + threadIdx.x < A_length - A_consumed)
-            {
-                A_S[i + threadIdx.x] = A[A_curr + A_consumed + i + threadIdx.x];
-            }
+            A_S[i + threadIdx.x] =
+                A[A_curr + A_consumed + i + threadIdx.x];
         }
-        for (int i = 0; i < tile_size; i += blockDim.x)
-        {
-            if (i + threadIdx.x < B_length - B_consumed)
-            {
-                B_S[i + threadIdx.x] = B[B_curr + B_consumed + i + threadIdx.x];
-            }
-        }
-        __syncthreads();
-
-        //dividing threads output tile among threads;
-        int c_curr = threadIdx.x * (tile_size / blockDim.x);
-        int c_next = (threadIdx.x + 1) * (tile_size / blockDim.x);
-        c_curr = (c_curr <= C_length - C_completed) ? c_curr : C_length - C_completed;
-        c_next = (c_next <= C_length - C_completed) ? c_next : C_length - C_completed;
-
-        int a_curr = co_rank_tiled(c_curr, A_S, min(tile_size, A_length - A_consumed), B_S, min(tile_size, B_length - B_consumed));
-        int b_curr = c_curr - a_curr;
-
-        int a_next = co_rank_tiled(c_next, A_S, min(tile_size, A_length - A_consumed), B_S, min(tile_size, B_length - B_consumed));
-        int b_next = c_next - a_next;
-
-        merge_sequential_tiled(A_S + a_curr, a_next - a_curr, B_S + b_curr, b_next - b_curr, C + C_curr + C_completed + c_curr);
-
-        __syncthreads();
-
-        int active_A_tile = min(tile_size, A_length - A_consumed);
-        int active_B_tile = min(tile_size, B_length - B_consumed);
-        int current_tile_merged_size = min(tile_size, C_length - C_completed);
-
-        int a_consumed_this_step = co_rank_tiled(current_tile_merged_size, A_S, active_A_tile, B_S, active_B_tile);
-        int b_consumed_this_step = current_tile_merged_size - a_consumed_this_step;
-
-        C_completed += current_tile_merged_size;
-        A_consumed += a_consumed_this_step;
-        B_consumed += b_consumed_this_step;
-        counter++;
-        __syncthreads();
     }
-```
-- In this stage is where we shift responsibility of loading  to threads within our block.
-- Recall that each block has 128 threads, given the snippet below:
-```
-for (int i = 0; i < tile_size; i += blockDim.x)
+
+    for (int i = 0; i < tile_size; i += blockDim.x)
+    {
+        if (i + threadIdx.x < B_length - B_consumed)
         {
-            if (i + threadIdx.x < A_length - A_consumed)
-            {
-                A_S[i + threadIdx.x] = A[A_curr + A_consumed + i + threadIdx.x];
-            }
+            B_S[i + threadIdx.x] =
+                B[B_curr + B_consumed + i + threadIdx.x];
         }
-        for (int i = 0; i < tile_size; i += blockDim.x)
-        {
-            if (i + threadIdx.x < B_length - B_consumed)
-            {
-                B_S[i + threadIdx.x] = B[B_curr + B_consumed + i + threadIdx.x];
-            }
-        }
-        __syncthreads();
-```
-- Since `tile_size=1024` and `blockDim.x` is `128`, each thread loads `1024/128=8` into the shared memory meaning we have eight rounds of loading on thread-level.
+    }
 
+    __syncthreads();
 
-- Round 1
-```
-i=0
-A_length-A_consumed = 1000
-```
-```
-thread 0 loads A[0] to A_S[0]
-....
-thread 127 loads A[127] to A_S[127]
+    // Divide the output tile among threads.
+    int c_curr = threadIdx.x * (tile_size / blockDim.x);
+    int c_next = (threadIdx.x + 1) * (tile_size / blockDim.x);
 
-```
-- This strategy continues until the eight iteration.
+    c_curr = (c_curr <= C_length - C_completed)
+        ? c_curr : C_length - C_completed;
 
-## Thread-level merge
-- For each thread in the block we assign each one of them the regions in output array C they'll be responsible for:
+    c_next = (c_next <= C_length - C_completed)
+        ? c_next : C_length - C_completed;
+
+    int a_curr = co_rank_tiled(
+        c_curr,
+        A_S,
+        min(tile_size, A_length - A_consumed),
+        B_S,
+        min(tile_size, B_length - B_consumed)
+    );
+
+    int b_curr = c_curr - a_curr;
+
+    int a_next = co_rank_tiled(
+        c_next,
+        A_S,
+        min(tile_size, A_length - A_consumed),
+        B_S,
+        min(tile_size, B_length - B_consumed)
+    );
+
+    int b_next = c_next - a_next;
+
+    merge_sequential_tiled(
+        A_S + a_curr, a_next - a_curr,
+        B_S + b_curr, b_next - b_curr,
+        C + C_curr + C_completed + c_curr
+    );
+
+    __syncthreads();
+
+    int active_A_tile = min(tile_size, A_length - A_consumed);
+    int active_B_tile = min(tile_size, B_length - B_consumed);
+
+    int current_tile_merged_size = min(
+        tile_size,
+        C_length - C_completed
+    );
+
+    int a_consumed_this_step = co_rank_tiled(
+        current_tile_merged_size,
+        A_S, active_A_tile,
+        B_S, active_B_tile
+    );
+
+    int b_consumed_this_step =
+        current_tile_merged_size - a_consumed_this_step;
+
+    C_completed += current_tile_merged_size;
+    A_consumed += a_consumed_this_step;
+    B_consumed += b_consumed_this_step;
+
+    counter++;
+
+    __syncthreads();
+}
+```
+
+- This is where we shift the responsibility of loading data into shared memory to the threads within our block.
+- Recall that each block has 128 threads.
+- Let's revisit the loading section:
+
 ```cpp
- //dividing threads output tile among threads;
+for (int i = 0; i < tile_size; i += blockDim.x)
+{
+    if (i + threadIdx.x < A_length - A_consumed)
+    {
+        A_S[i + threadIdx.x] =
+            A[A_curr + A_consumed + i + threadIdx.x];
+    }
+}
+
+for (int i = 0; i < tile_size; i += blockDim.x)
+{
+    if (i + threadIdx.x < B_length - B_consumed)
+    {
+        B_S[i + threadIdx.x] =
+            B[B_curr + B_consumed + i + threadIdx.x];
+    }
+}
+
+__syncthreads();
+```
+
+- Since `tile_size = 1024` and `blockDim.x = 128`, each thread can load up to:
+
+$$
+\frac{1024}{128} = 8
+$$
+
+- In other words, each thread performs up to eight loads for each input array, meaning we have eight rounds of loading at the thread level.
+- Let's see how this works.
+
+### Round 1
+
+```
+i = 0
+
+A_length - A_consumed = 1000
+```
+
+- During this round:
+
+```
+Thread 0 loads A[0] into A_S[0]
+
+...
+
+Thread 127 loads A[127] into A_S[127]
+```
+
+- Notice that each thread is responsible for loading a different element into shared memory.
+- During the second round, `i = 128`:
+
+```
+Thread 0 loads A[128] into A_S[128]
+
+...
+
+Thread 127 loads A[255] into A_S[255]
+```
+
+- This strategy continues until we've completed all eight rounds.
+- However, remember that our **A** chunk only contains 1000 elements. Therefore, during the final round, some threads won't load anything because their corresponding indices exceed the number of remaining elements.
+- The same process happens when loading elements from **B**.
+- Finally, `__syncthreads()` ensures that all threads have finished loading their respective elements into shared memory before any thread starts accessing the tiles for merging.
+
+## Thread-Level Merge
+
+- Now that we've loaded our input tiles into shared memory, we need to divide the output tile among the threads in our block.
+- For each thread, we assign a region in the output array **C** that it will be responsible for producing.
+- We achieve this using the following code:
+
+```cpp
+// Divide the output tile among threads.
 int c_curr = threadIdx.x * (tile_size / blockDim.x);
 int c_next = (threadIdx.x + 1) * (tile_size / blockDim.x);
-c_curr = (c_curr <= C_length - C_completed) ? c_curr : C_length - C_completed;
-c_next = (c_next <= C_length - C_completed) ? c_next : C_length - C_completed;
+
+c_curr = (c_curr <= C_length - C_completed)
+    ? c_curr : C_length - C_completed;
+
+c_next = (c_next <= C_length - C_completed)
+    ? c_next : C_length - C_completed;
 ```
-- So for $T_{0}$
+
+- So, for $T_{0}$:
+
 ```cpp
-c_curr = 0*(1024/128) =0
-c_next = (0+1)*(1024/128) = 8
+c_curr = 0 * (1024 / 128) = 0
+
+c_next = (0 + 1) * (1024 / 128) = 8
 ```
-- Meaning  $T_{0}$ is responsible for writing values within C[0-8].
-- After finding the region of array C $T_{0}$ will be responsible for, we need to know which portions of A and B $T_{0}$ will be responsible for.
-- To do so we do:
+
+- This means $T_{0}$ is responsible for producing 8 elements in the current output tile, corresponding to the range `[0, 8)`, or C[0] through C[7].
+- After determining the region of array **C** that $T_{0}$ will be responsible for, we need to know which portions of **A** and **B** are required to produce those elements.
+- To do so, we use the co-rank function again:
+
 ```cpp
-int a_curr = co_rank_tiled(c_curr, A_S, min(tile_size, A_length - A_consumed), B_S, min(tile_size, B_length - B_consumed));
+int a_curr = co_rank_tiled(
+    c_curr,
+    A_S,
+    min(tile_size, A_length - A_consumed),
+    B_S,
+    min(tile_size, B_length - B_consumed)
+);
+
 int b_curr = c_curr - a_curr;
 
-int a_next = co_rank_tiled(c_next, A_S, min(tile_size, A_length - A_consumed), B_S, min(tile_size, B_length - B_consumed));
+int a_next = co_rank_tiled(
+    c_next,
+    A_S,
+    min(tile_size, A_length - A_consumed),
+    B_S,
+    min(tile_size, B_length - B_consumed)
+);
+
 int b_next = c_next - a_next;
 ```
 
-- From above:
+- From the calculations above, let's assume we obtain:
+
 ```
 a_curr = 0
-b_curr = 0-0 = 0
+b_curr = 0 - 0 = 0
 
-a_next = 3 .. note this an assumption
-b_next = 8-3 = 5
+a_next = 3
+
+b_next = 8 - 3 = 5
 ```
-- We finally call the merge function as so:
+
+- Note that `a_next = 3` is an illustrative assumption. The actual value depends on the elements in the loaded tiles.
+- We finally call the merge function as follows:
+
 ```cpp
-   merge_sequential_tiled(A_S + a_curr,
-       a_next - a_curr,
-B_S + b_curr,
-b_next - b_curr,
-C + C_curr + C_completed + c_curr);
-
+merge_sequential_tiled(
+    A_S + a_curr,
+    a_next - a_curr,
+    B_S + b_curr,
+    b_next - b_curr,
+    C + C_curr + C_completed + c_curr
+);
 ```
+
 - Which translates to:
-```
-merge_sequential
-(
-  &shareAB[0]+0,
-  3,
-  &shareAB[1024]+0
-  5
-  &C[0]+0+0+0
-)
 
+```cpp
+merge_sequential_tiled(
+    shareAB + 0,
+    3,
+    shareAB + 1024,
+    5,
+    C + 0 + 0 + 0
+);
 ```
-- Meaning for $T_{0}$ it merge sharedAB[0-3] and sharedAB[1024-1028] into C[0-8].
-- Note I've use $T_{0}$ in my example , the other threads $T_{1}$ all the way to $T_{127}$ do the same thing to their dedicated regions.
 
-- Next we need to know how many elements of A and B have been consumed so far.
-- To do so we do:
-```
+- Meaning that $T_{0}$ will merge the first three elements of the **A** tile, `shareAB[0]` through `shareAB[2]`, with the first five elements of the **B** tile, `shareAB[1024]` through `shareAB[1028]`.
+- The resulting eight elements will be written to C[0] through C[7].
+- Note that I've used $T_{0}$ as my example. The other threads, from $T_{1}$ all the way to $T_{127}$, follow the same procedure for their respective output regions.
+
+## Tracking the Consumed Elements
+
+- Next, we need to know how many elements of **A** and **B** have been consumed during the current iteration.
+- Why is this important?
+- Remember that our block has to process 3000 output elements, but we're only loading tiles of up to 1024 elements from each input array into shared memory.
+- Once we've merged the current tiles, we need to update our counters so that the next iteration loads the correct portions of **A** and **B**.
+- To do so, we use:
+
+```cpp
 int active_A_tile = min(tile_size, A_length - A_consumed);
 int active_B_tile = min(tile_size, B_length - B_consumed);
-int current_tile_merged_size = min(tile_size, C_length - C_completed);
 
-int a_consumed_this_step = co_rank_tiled(current_tile_merged_size, A_S,active_A_tile, B_S, active_B_tile);
-int b_consumed_this_step = current_tile_merged_size - a_consumed_this_step;
+int current_tile_merged_size = min(
+    tile_size,
+    C_length - C_completed
+);
+
+int a_consumed_this_step = co_rank_tiled(
+    current_tile_merged_size,
+    A_S,
+    active_A_tile,
+    B_S,
+    active_B_tile
+);
+
+int b_consumed_this_step =
+    current_tile_merged_size - a_consumed_this_step;
+```
+
+- Let's substitute our current values:
 
 ```
-- From above:
-```
-active_A_tile = min(1024,1000-0) = 1000
-active_B_tile = min(1024,2000-0) = 1024
-current_tile_merged_size = min(1024,3000) = 1024
+active_A_tile = min(1024, 1000 - 0)
+               = 1000
 
+active_B_tile = min(1024, 2000 - 0)
+               = 1024
+
+current_tile_merged_size = min(1024, 3000 - 0)
+                         = 1024
 ```
+
+- Notice that we're determining how many elements from each input tile are available for merging, as well as how many output elements we can produce during the current iteration.
+- We then use the co-rank function to determine how many elements from **A** are needed to produce the current output tile.
+- Since the merged output tile contains 1024 elements, the remaining elements must come from **B**:
+
+$$
+b_{\text{consumed}} =
+1024 - a_{\text{consumed}}
+$$
+
+- Finally, we update our counters:
+
+```cpp
+C_completed += current_tile_merged_size;
+
+A_consumed += a_consumed_this_step;
+
+B_consumed += b_consumed_this_step;
+```
+
+- This allows us to keep track of how many elements we've processed from each input array and how many output elements we've written so far.
+- We then increment `counter` and proceed to the next iteration.
+
+- The process continues until we've produced all 3000 output elements assigned to $block_{0}$.
