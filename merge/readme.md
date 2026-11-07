@@ -504,4 +504,53 @@ int* B_S = &shareAB[tile_size];
 - Each block is assigned a region in the output array **C** it will responsible for.
 - So for $block_{0}$ to find out which region of output array **C** it will responsible for, we need these statements:
 ```cpp
+int C_curr = blockIdx.x * ((m + n + gridDim.x - 1) / gridDim.x);
+int C_next = min((blockIdx.x + 1) * ((m + n + gridDim.x - 1) / gridDim.x), (m + n));
 ```
+- Let's get our hands dirty and calculate the values above.
+- Since for $block_{0}$
+```
+blockIdx.x = 0
+gridDim.x = 4 .. since we have 4 threadblocks
+```
+- So:
+```
+C_curr = 0*((6000+6000)+4-1)/4) = 0
+C_next = min((0+1)*(6000+6000+4-1)/gridDim.x),(6000+6000) = 3000
+```
+- So `C_curr=0` and `C_next=3000`, meaning $block_{0}$ is responsible for writing the first 3000 elements of array **C**.
+
+- Now we need to know which regions of shared memory subarrays `A_S` and `B_S`, $block_{0}$ will be responsible for:
+- The code below helps us to do so:
+```cpp
+if (threadIdx.x == 0)
+    {
+        A_S[0] = co_rank_tiled(C_curr, A, m, B, n);
+        A_S[1] = co_rank_tiled(C_next, A, m, B, n);
+    }
+
+    __syncthreads();
+
+    int A_curr = A_S[0];
+    int A_next = A_S[1];
+    int B_curr = C_curr - A_curr;
+    int B_next = C_next - A_next;
+
+    __syncthreads();
+```
+- The thread with index 0 i.e $T_{0}$ in the if block will responsible for calculating the co-rank values $i$ and $j$ so that we'll know what amount of elements from **A**, we'll use:
+- Let's get our hands dirty and do the maths
+```
+A_S[0] = 0
+A_S[1] = 1000 .. Note that this is a wild guess since A_S[1] is dependant on how the array A's elements look like
+```
+- With the information above:
+```
+A_curr = A_S[0] = 0
+A_next = A_S[1] = 1000
+B_curr = C_curr- A_curr = 0-0= 0
+B_next = C_next-A_next = 3000-1000=2000
+```
+- From the data above we conclude that $block_{0}$ needs the first 1000 elements from array **A** and  needs the first 3000 elements from array **B**.
+
+## How many Iteration will $block_0$ need to fully write it's output elements?
