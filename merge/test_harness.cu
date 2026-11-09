@@ -5,8 +5,9 @@
 #include <chrono>
 #include <cuda_runtime.h>
 
-#include "merge.cu"
+#include "naive_merge.cu"
 #include "tiled_merge.cu"
+#include "circular_buffer_merge.cu"
 
 int main() {
     const int m = 1 << 20;
@@ -22,11 +23,9 @@ int main() {
     for (int i = 0; i < m; ++i) h_A[i] = dis(gen);
     for (int i = 0; i < n; ++i) h_B[i] = dis(gen);
 
-    //sorting elements in h_A and h_B arrays
     std::sort(h_A.begin(), h_A.end());
     std::sort(h_B.begin(), h_B.end());
 
-     //naively merging h_A and h_B in the host
     std::vector<int> h_C_cpu(m + n);
     std::merge(h_A.begin(), h_A.end(), h_B.begin(), h_B.end(), h_C_cpu.begin());
 
@@ -38,11 +37,11 @@ int main() {
     cudaMemcpy(d_A, h_A.data(), m * sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(d_B, h_B.data(), n * sizeof(int), cudaMemcpyHostToDevice);
 
-    //  Test Naive Merge Kernel
+    // 1. Test Naive Merge Kernel
     cudaMemset(d_C, 0, (m + n) * sizeof(int));
     int threadsPerBlock = 256;
     int blocksPerGrid = 128;
-    
+
     merge_basic_kernel<<<blocksPerGrid, threadsPerBlock>>>(d_A, m, d_B, n, d_C);
     cudaDeviceSynchronize();
 
@@ -53,7 +52,6 @@ int main() {
     for (int i = 0; i < m + n; ++i) {
         if (h_C_naive[i] != h_C_cpu[i]) {
             naive_success = false;
-            std::cout << "Naive mismatch at " << i << ": GPU=" << h_C_naive[i] << " CPU=" << h_C_cpu[i] << "\n";
             break;
         }
     }
@@ -80,7 +78,6 @@ int main() {
     for (int i = 0; i < m + n; ++i) {
         if (h_C_tiled[i] != h_C_cpu[i]) {
             tiled_success = false;
-            std::cout << "Tiled mismatch at " << i << ": GPU=" << h_C_tiled[i] << " CPU=" << h_C_cpu[i] << "\n";
             break;
         }
     }
@@ -88,6 +85,27 @@ int main() {
         std::cout << "SUCCESS: Tiled parallel merge verified correctly!\n";
     } else {
         std::cout << "FAILURE: Tiled parallel merge produced incorrect results.\n";
+    }
+
+    // 3. Test Circular Buffer Merge Kernel
+    cudaMemset(d_C, 0, (m + n) * sizeof(int));
+    merge_circular_buffer_kernel<<<blocksPerGrid, threadsPerBlock, shared_mem_size>>>(d_A, m, d_B, n, d_C, tile_size);
+    cudaDeviceSynchronize();
+
+    std::vector<int> h_C_circular(m + n);
+    cudaMemcpy(h_C_circular.data(), d_C, (m + n) * sizeof(int), cudaMemcpyDeviceToHost);
+
+    bool circular_success = true;
+    for (int i = 0; i < m + n; ++i) {
+        if (h_C_circular[i] != h_C_cpu[i]) {
+            circular_success = false;
+            break;
+        }
+    }
+    if (circular_success) {
+        std::cout << "SUCCESS: Circular Buffer parallel merge verified correctly!\n";
+    } else {
+        std::cout << "FAILURE: Circular Buffer parallel merge produced incorrect results.\n";
     }
 
     cudaFree(d_A);
