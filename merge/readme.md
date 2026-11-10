@@ -976,3 +976,145 @@ B_consumed += b_consumed_this_step;
 - We then increment `counter` and proceed to the next iteration.
 
 - The process continues until we've produced all 3000 output elements assigned to $block_{0}$.
+
+# Circular Buffer Merge
+
+- The tiled merge kernel has an inefficiency. Consider, for example, the shared memory arrays for $block_0$, `A_S` and `B_S`, shown below:
+
+```cpp
+A_S = {1, 3, 5, 7, 9, 11, 13, 17, 19}
+B_S = {2, 4, 8, 10, 12, 14, 16, 18, 20}
+```
+
+- Suppose that $block_0$ has 2 threads, and each thread is responsible for merging 5 output elements.
+- For $T_0$, the co-rank values `i` and `j` at the end of its output partition are 3 and 2, respectively. This means that it consumes 3 elements from `A_S` and 2 from `B_S`.
+- For $T_1$, the co-rank values at the end of its output partition are 6 and 4, respectively. Since $T_0$ has already consumed 3 elements from `A_S` and 2 from `B_S`, $T_1$ consumes another 3 elements from `A_S` and 2 from `B_S`.
+- Consequently, after the merging operation in round 1, we expect `C` to contain:
+
+```cpp
+C = {1, 2, 3, 4, 5, 7, 8, 9, 10, 11}
+```
+
+- Notice that we have consumed 6 elements from `A_S` and 4 from `B_S`. Therefore, the remaining elements in our shared memory arrays are:
+
+```cpp
+A_S = {x, x, x, x, x, x, 13, 17, 19}
+B_S = {x, x, x, x, 12, 14, 16, 18, 20}
+```
+
+- In a conventional tiled merge kernel, the next iteration loads another set of input elements into shared memory.
+- However, notice that some of the elements that were loaded into shared memory during the previous iteration were never consumed. These elements are still available in the original input arrays in global memory.
+- Consequently, when the next iteration loads its input tiles, it may load these elements into shared memory again, even though they were already loaded during the previous iteration.
+- This results in unnecessary global memory traffic.
+
+### Introducing Circular Buffers
+
+- We need a way to solve this issue, and this is where **circular buffers** come in.
+- Instead of discarding the unconsumed elements and loading them again, what if we could preserve them in shared memory?
+- We can achieve this by keeping track of the number of elements consumed from `A_S` and `B_S`.
+- We then use these consumption counts to advance the logical starting positions of the respective buffers.
+- The positions occupied by consumed elements become available for new elements loaded from global memory.
+- This allows us to load only the new elements we need while preserving the elements that were already loaded but haven't been consumed.
+- This process of consuming elements, advancing the buffer positions, and refilling the available slots continues throughout the merge operation.
+
+To achieve this, we use the following code:
+
+```cpp
+A_S_start =
+    (A_S_start + a_consumed) % tile_size;
+
+B_S_start =
+    (B_S_start + b_consumed) % tile_size;
+```
+
+- In our example, we use a tile size of 9 for both `A_S` and `B_S`.
+- Initially, both buffer starting positions are 0.
+- After the first iteration, we have:
+
+```cpp
+a_consumed = 6;
+b_consumed = 4;
+```
+
+- Therefore, to obtain the new starting positions, we do:
+
+```cpp
+A_S_start = (0 + 6) % 9 = 6;
+B_S_start = (0 + 4) % 9 = 4;
+```
+
+- Notice that we are not physically shifting the elements inside our shared memory arrays. Instead, we are changing the logical starting positions. This is what makes the buffers circular.
+
+### Refilling the Buffers
+
+- After advancing the starting positions, we need to determine how many new elements we can load into the available slots.
+- We use the following code:
+
+```cpp
+int A_to_load = min_int(
+    a_consumed,
+    A_length - A_loaded
+);
+
+int B_to_load = min_int(
+    b_consumed,
+    B_length - B_loaded
+);
+```
+
+- Here:
+  - `A_length` and `B_length` represent the total number of elements in the original input arrays.
+  - `A_loaded` and `B_loaded` represent the cumulative number of elements loaded from global memory.
+  - `a_consumed` and `b_consumed` represent the number of slots that have become available in the respective shared memory buffers.
+- So far, our example has used arrays containing only 9 elements each. This means that we have already loaded all their elements into shared memory.
+- However, real-world merge operations can involve much larger arrays. Let's consider what happens when our original arrays contain 30 elements each.
+
+Suppose the original arrays are:
+
+```cpp
+A = {1, 3, 5, 7, 9, 11, 13, 17, 19,
+     21, 23, 25, 27, 29, 31, 33, 35, 37,
+     39, 41, 43, 45, 47, 49, 51, 53, 55,
+     57, 59, 61};
+
+B = {2, 4, 8, 10, 12, 14, 16, 18, 20,
+     22, 24, 26, 28, 30, 32, 34, 36, 38,
+     40, 42, 44, 46, 48, 50, 52, 54,
+     56, 58, 60, 62};
+```
+
+- Since our tile size is 9, we initially load only the first 9 elements from each array into shared memory.
+- After the first merge iteration, we have consumed 6 elements from `A_S` and 4 from `B_S`.
+- This leaves us with 3 unconsumed elements in `A_S` and 5 unconsumed elements in `B_S`.
+- Consequently, we have 6 available slots in `A_S` and 4 available slots in `B_S`.
+- We can now load new elements from global memory into these available slots.
+
+Using our previous code:
+
+```cpp
+A_length = 30;
+B_length = 30;
+
+A_loaded = 9;
+B_loaded = 9;
+
+A_to_load = min(6, 30 - 9) = 6;
+B_to_load = min(4, 30 - 9) = 4;
+```
+
+- This means that we load 6 new elements from `A` and 4 new elements from `B`.
+- These elements are loaded into the slots that were previously occupied by consumed elements.
+- Notice that we do not reload the elements that were already present in shared memory but weren't consumed.
+
+Our shared memory buffers now logically contain:
+
+```cpp
+A_S = {13, 17, 19, 21, 23, 25, 27, 29, 31};
+
+B_S = {12, 14, 16, 18, 20, 22, 24, 26, 28};
+```
+
+- We now have 9 elements available from each input array for the next merge iteration.
+- The next iteration can therefore continue merging from where the previous iteration stopped, without having to reload the unconsumed elements.
+- We repeat this process of merging, advancing the buffer starting positions, and refilling available slots until the block has produced all its assigned output elements.
+
