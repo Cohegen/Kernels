@@ -120,3 +120,69 @@ out = [001,010,011,100,110,111]
 ```
 out = [1,2,3,4,6,7]
 ```
+## Parallel Radix
+- Is there a way in which we parallel like the work done in Radix sort?
+- Yes there is, here we'll dive deep into parallel radix sort.
+
+### Deep dive
+- Given our input array:
+```
+A= [4,3,2,7,6,1]
+```
+- Our input array in binary form becomes:
+```
+A = [100,011,010,111,110,001]
+
+```
+- Assuming that our threadblock has 6 threads i.e the same number as our input element.
+- We assign each thread to a respective input element.
+- So:
+```
+thread 0 -> 4
+thread 1 -> 3
+thread 2-> 2
+thread 3 -> 7
+thread 4-> 6
+thread 5->1
+```
+- Each thread will be responsible for:
+      1. Loading its assigned key.
+      2. Extracts the relevant bit.
+      3. Determines which bucket the key belongs to.
+      4. Determines its destination index
+      5. Writes the key to the output array
+
+- The first three steps seem straighforward.
+- However, how does an individual thread know where the destination index is?
+- For example for element at index 0 which is 4. we want to know at which index after the first round it will be written to in the output array.
+- Since the LSB of 4 is zero, for any element in round 1 whose LSB is zero. It's destination index is:
+```
+Dest_idx(0) = index - OnesBefore
+```
+- In our case the index of 4 is 0 and there are no ones before it so its index in the output array will be:
+```
+Dest_idx(0) = 0-0 =0
+```
+
+- But what about the elements whose LSB is 1? What will their indices be in the output array?
+- To find out we use the formular below
+```
+dest_idx(1) = ZeroTotal+onesBefore
+where Zerototal = inputSize-OnesTotal
+```
+- For example element 7 which is at index 3.
+- There are 3 elements with zero as their LSB meaning `zeroTotals=3`.
+- Also element 3 is the only element that comes before element 7 whose LSB is one meaning `OneBefore=1`.
+- So from this our index is:
+```
+dest_idx(1) = 3+1=4
+```
+- This whole thing looks sequential and not parallel like we expected now let's get into the parallel territory :) .
+
+## Parallize rush
+- From the previous section we knew that each of our threads had to the follow:
+                - Loads its assigned key.
+                - Extracts the relevant bit.
+                - Determines which bucket the key belongs to.
+                 - Determines its destination index.
+                 - Writes the key to the output array
