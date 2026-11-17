@@ -120,129 +120,179 @@ out = [001,010,011,100,110,111]
 ```
 out = [1,2,3,4,6,7]
 ```
-## Parallel Radix
-- Is there a way in which we parallel like the work done in Radix sort?
-- Yes there is, here we'll dive deep into parallel radix sort.
+## Parallel Radix Sort
 
-### Deep dive
+- Is there a way we can parallelize the work performed during Radix Sort?
+- Yes, there is! In this section, we'll dive deep into Parallel Radix Sort.
+
+### Deep Dive
+
 - Given our input array:
-```
-A= [4,3,2,7,6,1]
-```
-- Our input array in binary form becomes:
-```
-A = [100,011,010,111,110,001]
 
+```cpp
+A = [4,3,2,7,6,1]
 ```
-- Assuming that our threadblock has 6 threads i.e the same number as our input element.
+
+- Our input array in binary form becomes:
+
+```cpp
+A = [100,011,010,111,110,001]
+```
+
+- Assuming our thread block has 6 threads, i.e., the same number of threads as the number of input elements.
 - We assign each thread to a respective input element.
-- So:
-```
+
+- Therefore:
+
+```cpp
 thread 0 -> 4
 thread 1 -> 3
-thread 2-> 2
+thread 2 -> 2
 thread 3 -> 7
-thread 4-> 6
-thread 5->1
+thread 4 -> 6
+thread 5 -> 1
 ```
-- Each thread will be responsible for:
-      1. Loading its assigned key.
-      2. Extracts the relevant bit.
-      3. Determines which bucket the key belongs to.
-      4. Determines its destination index
-      5. Writes the key to the output array
 
-- The first three steps seem straighforward.
-- However, how does an individual thread know where the destination index is?
-- For example for element at index 0 which is 4. we want to know at which index after the first round it will be written to in the output array.
-- Since the LSB of 4 is zero, for any element in round 1 whose LSB is zero. It's destination index is:
-```
+- Each thread will be responsible for the following:
+
+  1. Loading its assigned key.
+  2. Extracting the relevant bit.
+  3. Determining which bucket the key belongs to.
+  4. Determining its destination index.
+  5. Writing the key to the output array.
+
+- The first three steps seem straightforward.
+- However, how does an individual thread know where its destination index is?
+- For example, consider the element at index 0, which is 4. We want to determine the index at which it will be written in the output array after the first round.
+
+- Since the LSB (Least Significant Bit) of 4 is 0, its destination index is calculated using the following formula:
+
+```cpp
 Dest_idx(0) = index - OnesBefore
 ```
-- In our case the index of 4 is 0 and there are no ones before it so its index in the output array will be:
-```
-Dest_idx(0) = 0-0 =0
+
+- In our case, the index of 4 is 0, and there are no elements with an LSB of 1 before it. Therefore, its destination index in the output array will be:
+
+```cpp
+Dest_idx(0) = 0 - 0 = 0
 ```
 
-- But what about the elements whose LSB is 1? What will their indices be in the output array?
-- To find out we use the formular below
-```
-dest_idx(1) = ZeroTotal+onesBefore
-where Zerototal = inputSize-OnesTotal
-```
-- For example element 7 which is at index 3.
-- There are 3 elements with zero as their LSB meaning `zeroTotals=3`.
-- Also element 3 is the only element that comes before element 7 whose LSB is one meaning `OneBefore=1`.
-- So from this our index is:
-```
-dest_idx(1) = 3+1=4
-```
-- This whole thing looks sequential and not parallel like we expected now let's get into the parallel territory :) .
+- But what about elements whose LSB is 1? What will their destination indices be in the output array?
+- To determine this, we use the formula below:
 
-## Parallize rush
-- From the previous section we knew that each of our threads had to the follow:
-                - Loads its assigned key.
-                - Extracts the relevant bit.
-                - Determines which bucket the key belongs to.
-                 - Determines its destination index.
-                 - Writes the key to the output array
-- But how does each thread know say the number of ones before?
-- To do this we perform an exclusive scan on extracted  bits.
-- In the first round the extracted bits are:
+```cpp
+Dest_idx(1) = ZeroTotal + OnesBefore
+
+where:
+ZeroTotal = inputSize - OnesTotal
 ```
+
+- For example, consider element 7, which is at index 3.
+- There are 3 elements whose LSB is 0, meaning `ZeroTotal = 3`.
+- Also, element 3 is the only element before 7 whose LSB is 1, meaning `OnesBefore = 1`.
+- Therefore, our destination index is:
+
+```cpp
+Dest_idx(1) = 3 + 1 = 4
+```
+
+- This whole process might look sequential, which isn't what we expected when we set out to parallelize Radix Sort.
+- Now, let's get into the parallel part! :)
+
+## Parallelization Process
+
+- From the previous section, we established that each thread needs to perform the following operations:
+
+  - Load its assigned key.
+  - Extract the relevant bit.
+  - Determine which bucket the key belongs to.
+  - Determine its destination index.
+  - Write the key to the output array.
+
+- But how does each thread know, for example, the number of ones preceding its assigned element?
+- To solve this problem, we perform an **exclusive scan** on the extracted bits.
+
+- In the first round, the extracted bits are:
+
+```cpp
 bits = [0,1,0,1,0,1]
 ```
-- Then we perform exclusive scan on the bits to get:
-```
+
+- We then perform an exclusive scan on these bits to obtain:
+
+```cpp
 scan = [0,0,1,1,2,2]
 ```
-- The values in the `scan` array represent the number of ones before each element.
-- We can deduce from this that:
-```
-OnesTotal = scan[n-1] + bit[n-1]
-where n is the number of elements in out input array
-OnesTotal = 2+1 = 3
-```
-- So for the element at index 0:
-```
-key =0
-bit =0
-one before =0
-dest(0) = idx - oneBefore = 0-0 =0
-```
- - For element at index 1:
-```
-key =3
-bit =1
-OnesBefore =0
-Dest = 6-3+0 = 3
-```
-- For element at index 2
-```
-key = 2
-bit =0
-onesbefore =1
-Dest = 2-1 =1
-```
-- for element at index 3:
-```
-key = 7
-bit =1
-OnesBefore =2
-Dest =
-```
-- For element at index 4:
-```
-key = 6
-bit =0
-OnesBefore =2
-Dest = 4-2 =2
+
+- The values in the `scan` array represent the number of ones preceding each element.
+- From this, we can deduce the total number of ones using the following formula:
+
+```cpp
+OnesTotal = scan[n-1] + bits[n-1]
+
+where n is the number of elements in our input array.
+
+OnesTotal = 2 + 1 = 3
 ```
 
-- For element at index 5:
+- Now, let's calculate the destination indices for each element.
+
+**Element at index 0:**
+
+```cpp
+key = 4
+bit = 0
+OnesBefore = 0
+
+Dest = 0 - 0 = 0
 ```
-key =1
-bit =1
-OnesBefore =2
-Dest = 6-3+2 = 5
+
+**Element at index 1:**
+
+```cpp
+key = 3
+bit = 1
+OnesBefore = 0
+
+Dest = 6 - 3 + 0 = 3
+```
+
+**Element at index 2:**
+
+```cpp
+key = 2
+bit = 0
+OnesBefore = 1
+
+Dest = 2 - 1 = 1
+```
+
+**Element at index 3:**
+
+```cpp
+key = 7
+bit = 1
+OnesBefore = 1
+
+Dest = 3 + 1 = 4
+```
+
+**Element at index 4:**
+
+```cpp
+key = 6
+bit = 0
+OnesBefore = 2
+
+Dest = 4 - 2 = 2
+```
+
+**Element at index 5:**
+
+```cpp
+key = 1
+bit = 1
+OnesBefore = 2
+
+Dest = 6 - 3 + 2 = 5
 ```
