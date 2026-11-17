@@ -186,3 +186,63 @@ dest_idx(1) = 3+1=4
                 - Determines which bucket the key belongs to.
                  - Determines its destination index.
                  - Writes the key to the output array
+- But how does each thread know say the number of ones before?
+- To do this we perform an exclusive scan on extracted  bits.
+- In the first round the extracted bits are:
+```
+bits = [0,1,0,1,0,1]
+```
+- Then we perform exclusive scan on the bits to get:
+```
+scan = [0,0,1,1,2,2]
+```
+- The values in the `scan` array represent the number of ones before each element.
+- We can deduce from this that:
+```
+OnesTotal = scan[n-1] + bit[n-1]
+where n is the number of elements in out input array
+OnesTotal = 2+1 = 3
+```
+- So for the element at index 0:
+```
+key =0
+bit =0
+one before =0
+dest(0) = idx - oneBefore = 0-0 =0
+```
+ - For element at index 1:
+```
+key =3
+bit =1
+OnesBefore =0
+Dest = 6-3+0 = 3
+```
+- For element at index 2
+```
+key = 2
+bit =0
+onesbefore =1
+Dest = 2-1 =1
+```
+- for element at index 3:
+```
+key = 7
+bit =1
+OnesBefore =2
+Dest =
+```
+- For element at index 4:
+```
+key = 6
+bit =0
+OnesBefore =2
+Dest = 4-2 =2
+```
+
+- For element at index 5:
+```
+key =1
+bit =1
+OnesBefore =2
+Dest = 6-3+2 = 5
+```
